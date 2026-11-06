@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="vi" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hồ Sơ Tài Khoản & Tiến Trình Học Tập · NYOB ZOO Trilinguo</title>
+  <link rel="stylesheet" href="assets/css/style.css" />
+</head>
+<body>
+  <div class="app-wrapper">
+    <!-- TOP NAVIGATION BAR -->
+    <header class="site-header">
+      <div class="site-header__inner">
+        <div class="header-left">
+          <div class="prelogin-nav-cta" id="preloginNavCta">
+            <a href="#login" class="prelogin-login-link" data-open-auth><u data-i18n="pre_login">Login</u></a>
+            <span class="prelogin-learn-more" data-open-auth>
+              <span class="prelogin-arrow" aria-hidden="true">←</span>
+              <span data-i18n="pre_learn_more">Learn More</span>
+            </span>
+          </div>
+
+          <a href="index.html" class="brand-logo">
+            <img class="brand-logo__mascot" src="assets/images/mascot/10.svg" alt="Nyob Zoo Mascot" />
+            <div class="brand-logo__text-wrap">
+              <span class="brand-logo__title">NYOB ZOO</span>
+              <span class="brand-logo__subtitle" data-i18n="brand_sub">Lus zoo los ntawm Tả Van</span>
+            </div>
+          </a>
+        </div>
+
+        <nav class="main-nav is-hidden" id="mainPostLoginNav" aria-label="Main Navigation">
+          <a href="index.html" class="nav-link">
+            <span>✨</span>
+            <span data-i18n="nav_translator">Dịch thuật</span>
+          </a>
+          <a href="index.html?view=history#historySection" class="nav-link">
+            <span>🕒</span>
+            <span data-i18n="nav_history">Nhật ký dịch thuật</span>
+          </a>
+          <a href="phrase.html" class="nav-link">
+            <span>💬</span>
+            <span data-i18n="nav_phrases">Mẫu câu thông dụng</span>
+          </a>
+          <a href="vocabulary.html" class="nav-link">
+            <span>📒</span>
+            <span data-i18n="nav_notebook">Sổ tay cá nhân</span>
+          </a>
+          <a href="profile.html" class="nav-link nav-link--account active">
+            <span>👤</span>
+            <span id="navAccountName">Minh Anh</span>
+            <span class="nav-block-pill" id="navAccountBlock">VI → HMN</span>
+          </a>
+        </nav>
+
+        <div class="header-controls">
+          <div class="lang-switcher" role="group" aria-label="Display Language Switcher">
+            <button type="button" class="lang-switcher__btn" data-lang="hmn">HMN</button>
+            <button type="button" class="lang-switcher__btn active" data-lang="vi">VI</button>
+            <button type="button" class="lang-switcher__btn" data-lang="en">EN</button>
+          </div>
+          <button type="button" class="theme-toggle-btn" id="themeToggleBtn" aria-label="Toggle Light/Dark Mode">🌙</button>
+          <button type="button" class="burger-btn" id="mobileBurgerBtn" aria-label="Open Menu">
+            <span></span>
+            <span></span>
+            <span></span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- MAIN CONTENT -->
+    <main class="main-container">
+      <!-- TOP SECTION: PERSONAL INFORMATION & LANGUAGE BLOCK SWITCHER -->
+      <section class="page-section">
+        <div class="page-section__header">
+          <div class="page-section__title-group">
+            <img class="page-section__mascot" src="assets/images/mascot/13.svg" alt="Profile Mascot" />
+            <div>
+              <h1 class="page-section__title" data-i18n="prof_title">Thông Tin Tài Khoản & Tiến Trình Học Tập</h1>
+              <p class="page-section__subtitle" data-i18n="prof_subtitle">
+                Quản lý hồ sơ cá nhân và chuyển đổi qua lại giữa các Khối ngôn ngữ (Language Learning Blocks).
+              </p>
+            </div>
+          </div>
+          <button type="button" class="btn-tool btn-tool--outline" id="profLogoutBtn" data-i18n="prof_logout_btn">
+            🚪 Đăng xuất tài khoản
+          </button>
+        </div>
+
+        <form id="profileEditForm">
+          <div class="profile-form-grid">
+            <div class="form-group">
+              <label class="form-label" for="profNameInput" data-i18n="prof_name">Tên tài khoản</label>
+              <input type="text" id="profNameInput" class="form-control" required />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="profEmailInput" data-i18n="prof_email">Địa chỉ Gmail</label>
+              <input type="email" id="profEmailInput" class="form-control" required />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="profPhoneInput" data-i18n="prof_phone">Số điện thoại</label>
+              <input type="text" id="profPhoneInput" class="form-control" required />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="profNativeLangSelect" data-i18n="prof_i_am">Tôi là (Ngôn ngữ mẹ đẻ / Hiển thị):</label>
+              <select id="profNativeLangSelect" class="form-control">
+                <option value="vi">Kinh / Tiếng Việt (VI)</option>
+                <option value="hmn">Hmong / Lus Hmoob (HMN)</option>
+                <option value="en">Anh / English (EN)</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="profTargetLangSelect" data-i18n="prof_i_learn">Tôi muốn học (Ngôn ngữ mục tiêu):</label>
+              <select id="profTargetLangSelect" class="form-control">
+                <option value="hmn">Hmong / Lus Hmoob (HMN)</option>
+                <option value="en">Anh / English (EN)</option>
+                <option value="vi">Kinh / Tiếng Việt (VI)</option>
+              </select>
+            </div>
+          </div>
+
+          <div style="margin-top:1.4rem;display:flex;justify-content:flex-end;">
+            <button type="submit" class="translate-submit-btn" style="max-width:360px;" data-i18n="prof_save_btn">
+              💾 Lưu Hồ Sơ & Chuyển Khối Ngôn Ngữ
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <!-- BOTTOM SECTION: PERSONAL PROGRESS DASHBOARD (3 REAL-TIME METRICS) -->
+      <section class="page-section">
+        <div class="page-section__header">
+          <div class="page-section__title-group">
+            <img class="page-section__mascot" src="assets/images/mascot/7.svg" alt="Progress Mascot" />
+            <div>
+              <h2 class="page-section__title" data-i18n="prof_progress_title">Tiến Trình Học Tập Cá Nhân (Thời Gian Thực)</h2>
+              <p class="page-section__subtitle">
+                Dữ liệu được tính toán độc lập theo từng Khối ngôn ngữ (Language Learning Block).
+              </p>
+            </div>
+          </div>
+          <span class="online-badge" id="profileActiveBlockBadge" style="font-size:0.86rem;padding:0.5rem 1rem;">
+            Khối: Kinh → Hmong
+          </span>
+        </div>
+
+        <div class="metrics-grid">
+          <!-- Metric 1: Total Notebook Words -->
+          <div class="metric-card-3d">
+            <span class="card-3d__category">📒 Metric 01</span>
+            <div class="metric-card-3d__value" id="metricTotalWordsVal">12</div>
+            <div class="metric-card-3d__label" data-i18n="prof_metric_1_label">Số lượng từ trong Sổ tay</div>
+            <div class="metric-card-3d__formula" data-i18n="prof_metric_1_sub">
+              Tổng số từ/cụm từ hiện có trong Từ điển cá nhân của khối ngôn ngữ đang chọn.
+            </div>
+          </div>
+
+          <!-- Metric 2: Mastered Words (quiz_attempts >= 10 AND accuracy > 80%) -->
+          <div class="metric-card-3d">
+            <span class="card-3d__category">⭐ Metric 02</span>
+            <div class="metric-card-3d__value" id="metricMasteredWordsVal">2</div>
+            <div class="metric-card-3d__label" data-i18n="prof_metric_2_label">Số từ đã thành thạo (Mastered)</div>
+            <div class="metric-card-3d__formula" data-i18n="prof_metric_2_sub">
+              Thỏa mãn ĐỒNG THỜI: Đã kiểm tra Quiz ≥ 10 lần (quiz_attempts ≥ 10) VÀ tỉ lệ đúng &gt; 80%.
+            </div>
+          </div>
+
+          <!-- Metric 3: Quiz Accuracy -->
+          <div class="metric-card-3d">
+            <span class="card-3d__category">🎯 Metric 03</span>
+            <div class="metric-card-3d__value" id="metricQuizAccuracyVal">91.7%</div>
+            <div class="metric-card-3d__label" data-i18n="prof_metric_3_label">Độ chính xác Quiz (Quiz Accuracy)</div>
+            <div class="metric-card-3d__formula" id="metricQuizAccuracyDetail" data-i18n="prof_metric_3_sub">
+              (Tổng số câu quiz trả lời đúng / Tổng số câu quiz đã tạo của user) × 100%
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="assets/js/hmongData.js"></script>
+  <script src="assets/js/i18n.js"></script>
+  <script src="js/api.js"></script>
+  <script src="assets/js/supabaseClient.js"></script>
+  <script src="assets/js/app.js"></script>
+</body>
+</html>

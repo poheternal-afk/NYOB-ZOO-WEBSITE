@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="vi" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sổ Tay Cá Nhân · NYOB ZOO Trilinguo</title>
+  <link rel="stylesheet" href="assets/css/style.css" />
+</head>
+<body>
+  <div class="app-wrapper">
+    <!-- TOP NAVIGATION BAR -->
+    <header class="site-header">
+      <div class="site-header__inner">
+        <div class="header-left">
+          <div class="prelogin-nav-cta" id="preloginNavCta">
+            <a href="#login" class="prelogin-login-link" data-open-auth><u data-i18n="pre_login">Login</u></a>
+            <span class="prelogin-learn-more" data-open-auth>
+              <span class="prelogin-arrow" aria-hidden="true">←</span>
+              <span data-i18n="pre_learn_more">Learn More</span>
+            </span>
+          </div>
+
+          <a href="index.html" class="brand-logo">
+            <img class="brand-logo__mascot" src="assets/images/mascot/10.svg" alt="Nyob Zoo Mascot" />
+            <div class="brand-logo__text-wrap">
+              <span class="brand-logo__title">NYOB ZOO</span>
+              <span class="brand-logo__subtitle" data-i18n="brand_sub">Lus zoo los ntawm Tả Van</span>
+            </div>
+          </a>
+        </div>
+
+        <nav class="main-nav is-hidden" id="mainPostLoginNav" aria-label="Main Navigation">
+          <a href="index.html" class="nav-link">
+            <span>✨</span>
+            <span data-i18n="nav_translator">Dịch thuật</span>
+          </a>
+          <a href="index.html?view=history#historySection" class="nav-link">
+            <span>🕒</span>
+            <span data-i18n="nav_history">Nhật ký dịch thuật</span>
+          </a>
+          <a href="phrase.html" class="nav-link">
+            <span>💬</span>
+            <span data-i18n="nav_phrases">Mẫu câu thông dụng</span>
+          </a>
+          <a href="vocabulary.html" class="nav-link active">
+            <span>📒</span>
+            <span data-i18n="nav_notebook">Sổ tay cá nhân</span>
+          </a>
+          <a href="profile.html" class="nav-link nav-link--account">
+            <span>👤</span>
+            <span id="navAccountName">Minh Anh</span>
+            <span class="nav-block-pill" id="navAccountBlock">VI → HMN</span>
+          </a>
+        </nav>
+
+        <div class="header-controls">
+          <div class="lang-switcher" role="group" aria-label="Display Language Switcher">
+            <button type="button" class="lang-switcher__btn" data-lang="hmn">HMN</button>
+            <button type="button" class="lang-switcher__btn active" data-lang="vi">VI</button>
+            <button type="button" class="lang-switcher__btn" data-lang="en">EN</button>
+          </div>
+          <button type="button" class="theme-toggle-btn" id="themeToggleBtn" aria-label="Toggle Light/Dark Mode">🌙</button>
+          <button type="button" class="burger-btn" id="mobileBurgerBtn" aria-label="Open Menu">
+            <span></span>
+            <span></span>
+            <span></span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- MAIN CONTENT -->
+    <main class="main-container">
+      <section class="page-section">
+        <div class="page-section__header">
+          <div class="page-section__title-group">
+            <img class="page-section__mascot" src="assets/images/mascot/12.svg" alt="Notebook Mascot" />
+            <div>
+              <h1 class="page-section__title" data-i18n="nb_title">Sổ Tay Cá Nhân / Từ Điển Cá Nhân</h1>
+              <p class="page-section__subtitle" data-i18n="nb_subtitle">
+                Toàn bộ từ, cụm từ và câu bạn đã lưu từ Nhật ký dịch thuật và Mẫu câu thông dụng.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- TOP LEARNING TOOLBAR (Select All + Create Flashcard >=4 + Create Quiz >=10) -->
+        <div class="notebook-toolbar">
+          <div class="notebook-toolbar__left">
+            <button type="button" class="btn-tool btn-tool--outline" id="nbSelectAllBtn">
+              <span>☑️</span>
+              <span data-i18n="nb_select_all">Chọn tất cả / Bỏ chọn</span>
+            </button>
+            <div style="font-size:0.9rem;font-weight:800;color:var(--text-primary);">
+              <span data-i18n="nb_selected_count">Đang chọn:</span>
+              <span id="nbSelectedCountBadge" style="color:var(--color-main-orange);margin-left:0.25rem;">0 / 12</span>
+            </div>
+          </div>
+
+          <div class="notebook-toolbar__right">
+            <button type="button" class="btn-tool btn-tool--flashcard" id="nbCreateFlashcardBtn" data-i18n="nb_btn_flashcard">
+              🃏 Tạo Flashcard (Tối thiểu 4 từ)
+            </button>
+            <button type="button" class="btn-tool btn-tool--quiz" id="nbCreateQuizBtn" data-i18n="nb_btn_quiz">
+              🎯 Tạo Quizzes (Tối thiểu 10 từ)
+            </button>
+          </div>
+        </div>
+
+        <!-- 3D Notebook Cards Grid with Tickboxes -->
+        <div class="cards-grid-3d" id="notebookCardsGrid"></div>
+      </section>
+    </main>
+  </div>
+
+  <script src="assets/js/hmongData.js"></script>
+  <script src="assets/js/i18n.js"></script>
+  <script src="js/api.js"></script>
+  <script src="assets/js/supabaseClient.js"></script>
+  <script src="assets/js/app.js"></script>
+</body>
+</html>

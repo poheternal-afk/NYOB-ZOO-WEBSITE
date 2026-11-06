@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="vi" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bài Kiểm Tra Trắc Nghiệm (Quizzes) · NYOB ZOO Trilinguo</title>
+  <link rel="stylesheet" href="assets/css/style.css" />
+</head>
+<body>
+  <div class="app-wrapper">
+    <!-- TOP NAVIGATION BAR -->
+    <header class="site-header">
+      <div class="site-header__inner">
+        <div class="header-left">
+          <div class="prelogin-nav-cta" id="preloginNavCta">
+            <a href="#login" class="prelogin-login-link" data-open-auth><u data-i18n="pre_login">Login</u></a>
+            <span class="prelogin-learn-more" data-open-auth>
+              <span class="prelogin-arrow" aria-hidden="true">←</span>
+              <span data-i18n="pre_learn_more">Learn More</span>
+            </span>
+          </div>
+
+          <a href="index.html" class="brand-logo">
+            <img class="brand-logo__mascot" src="assets/images/mascot/10.svg" alt="Nyob Zoo Mascot" />
+            <div class="brand-logo__text-wrap">
+              <span class="brand-logo__title">NYOB ZOO</span>
+              <span class="brand-logo__subtitle" data-i18n="brand_sub">Lus zoo los ntawm Tả Van</span>
+            </div>
+          </a>
+        </div>
+
+        <nav class="main-nav is-hidden" id="mainPostLoginNav" aria-label="Main Navigation">
+          <a href="index.html" class="nav-link">
+            <span>✨</span>
+            <span data-i18n="nav_translator">Dịch thuật</span>
+          </a>
+          <a href="index.html?view=history#historySection" class="nav-link">
+            <span>🕒</span>
+            <span data-i18n="nav_history">Nhật ký dịch thuật</span>
+          </a>
+          <a href="phrase.html" class="nav-link">
+            <span>💬</span>
+            <span data-i18n="nav_phrases">Mẫu câu thông dụng</span>
+          </a>
+          <a href="vocabulary.html" class="nav-link active">
+            <span>📒</span>
+            <span data-i18n="nav_notebook">Sổ tay cá nhân</span>
+          </a>
+          <a href="profile.html" class="nav-link nav-link--account">
+            <span>👤</span>
+            <span id="navAccountName">Minh Anh</span>
+            <span class="nav-block-pill" id="navAccountBlock">VI → HMN</span>
+          </a>
+        </nav>
+
+        <div class="header-controls">
+          <div class="lang-switcher" role="group" aria-label="Display Language Switcher">
+            <button type="button" class="lang-switcher__btn" data-lang="hmn">HMN</button>
+            <button type="button" class="lang-switcher__btn active" data-lang="vi">VI</button>
+            <button type="button" class="lang-switcher__btn" data-lang="en">EN</button>
+          </div>
+          <button type="button" class="theme-toggle-btn" id="themeToggleBtn" aria-label="Toggle Light/Dark Mode">🌙</button>
+          <button type="button" class="burger-btn" id="mobileBurgerBtn" aria-label="Open Menu">
+            <span></span>
+            <span></span>
+            <span></span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- MAIN CONTENT -->
+    <main class="main-container">
+      <section class="page-section">
+        <div class="page-section__header">
+          <div class="page-section__title-group">
+            <img class="page-section__mascot" src="assets/images/mascot/9.svg" alt="Quiz Mascot" />
+            <div>
+              <h1 class="page-section__title" data-i18n="quiz_title">Bài Kiểm Tra Trắc Nghiệm (Quizzes)</h1>
+              <p class="page-section__subtitle" data-i18n="quiz_subtitle">
+                Hoàn thành bài kiểm tra từ các từ vựng đã chọn để cập nhật chỉ số Thành thạo (Mastered) và Độ chính xác vào Database.
+              </p>
+            </div>
+          </div>
+          <a href="vocabulary.html" class="btn-tool btn-tool--outline">← Quay lại Sổ tay cá nhân</a>
+        </div>
+
+        <!-- Quiz Result Summary Banner -->
+        <div
+          id="quizResultBanner"
+          style="display:none;background:var(--badge-bg);border:2px solid var(--color-main-leaf);padding:1.25rem 1.5rem;border-radius:20px;margin-bottom:1.5rem;"
+        ></div>
+
+        <!-- Quiz Questions List -->
+        <div id="quizQuestionsContainer"></div>
+
+        <!-- Submit Quiz Button -->
+        <div style="margin-top:1.5rem;display:flex;justify-content:flex-end;">
+          <button type="button" class="translate-submit-btn" id="submitQuizAnswersBtn" style="max-width:380px;">
+            <span>🎯</span>
+            <span data-i18n="quiz_submit">Nộp Bài Quiz & Lưu Tiến Trình</span>
+          </button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="assets/js/hmongData.js"></script>
+  <script src="assets/js/i18n.js"></script>
+  <script src="js/api.js"></script>
+  <script src="assets/js/supabaseClient.js"></script>
+  <script src="assets/js/app.js"></script>
+</body>
+</html>
