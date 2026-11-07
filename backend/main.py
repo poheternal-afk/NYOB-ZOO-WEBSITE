@@ -13,10 +13,12 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from config import settings
 from database import engine, Base
-from routers import auth, translate, phrases, notebook, profile
+from logger_lib import RequestLoggingMiddleware, log_api_event
+from routers import auth, translate, phrases, notebook, profile, system_logs
 
 # Create all database tables on startup
 Base.metadata.create_all(bind=engine)
+log_api_event("info", "Trilinguo NYOB ZOO Backend starting up...", component_id="CMP-SYS-BOOT")
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -42,12 +44,16 @@ app.add_middleware(
     secret_key=settings.JWT_SECRET_KEY,
 )
 
+# 2.5. Structured Request & Error Logging Middleware
+app.add_middleware(RequestLoggingMiddleware)
+
 # 3. Register API Routers
 app.include_router(auth.router)
 app.include_router(translate.router)
 app.include_router(phrases.router)
 app.include_router(notebook.router)
 app.include_router(profile.router)
+app.include_router(system_logs.router)
 
 
 @app.get("/api/health", tags=["System"])

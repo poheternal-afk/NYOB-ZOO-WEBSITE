@@ -18,9 +18,9 @@ class SendOtpRequest(BaseModel):
 
 
 class VerifyOtpAuthRequest(BaseModel):
-    identifier: str = Field(..., min_length=3)
+    identifier: str = Field(..., min_length=2)
     channel: str = Field(default="email")
-    otp_code: str = Field(..., min_length=6, max_length=6)
+    otp_code: Optional[str] = Field(default=None)
     account_name: Optional[str] = None
     password: Optional[str] = None
     native_lang: str = Field(default="vi", pattern="^(en|vi|hmn)$")
@@ -28,8 +28,17 @@ class VerifyOtpAuthRequest(BaseModel):
     accepted_terms: bool = Field(...)
 
 
+class DirectLoginRequest(BaseModel):
+    identifier: str = Field(..., min_length=2, description="Gmail, Phone number, or Username")
+    channel: str = Field(default="email")
+    account_name: Optional[str] = None
+    native_lang: str = Field(default="vi", pattern="^(en|vi|hmn)$")
+    target_lang: str = Field(default="hmn", pattern="^(en|vi|hmn)$")
+    accepted_terms: bool = Field(...)
+
+
 class PasswordLoginRequest(BaseModel):
-    identifier: str = Field(..., min_length=3, description="Email or Phone number")
+    identifier: str = Field(..., min_length=2, description="Email or Phone number")
     password: str = Field(..., min_length=6)
     native_lang: Optional[str] = Field(default=None, pattern="^(en|vi|hmn)$")
     target_lang: Optional[str] = Field(default=None, pattern="^(en|vi|hmn)$")
@@ -37,8 +46,8 @@ class PasswordLoginRequest(BaseModel):
 
 
 class ForgotPasswordResetRequest(BaseModel):
-    identifier: str = Field(..., min_length=3, description="Gmail or Phone number")
-    otp_code: str = Field(..., min_length=6, max_length=6)
+    identifier: str = Field(..., min_length=2, description="Gmail or Phone number")
+    otp_code: Optional[str] = Field(default=None)
     new_password: str = Field(..., min_length=6)
 
 

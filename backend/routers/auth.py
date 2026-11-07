@@ -22,6 +22,7 @@ from models import User, NotebookItem, TranslationHistory
 from schemas import (
     SendOtpRequest,
     VerifyOtpAuthRequest,
+    DirectLoginRequest,
     PasswordLoginRequest,
     ForgotPasswordResetRequest,
     GoogleOAuthTokenRequest,
@@ -363,6 +364,7 @@ async def send_otp_endpoint(
     return result
 
 
+@router.post("/login/direct", response_model=TokenResponse)
 @router.post("/otp/verify", response_model=TokenResponse)
 def verify_otp_and_authenticate(
     payload: VerifyOtpAuthRequest,
@@ -370,13 +372,14 @@ def verify_otp_and_authenticate(
 ):
     validate_profile_and_terms(payload.accepted_terms, payload.native_lang, payload.target_lang)
 
-    # Verify the 6-digit OTP in database (checks 5-minute TTL & exact code match)
-    verify_otp_code(
-        db=db,
-        identifier=payload.identifier,
-        otp_code=payload.otp_code,
-        purpose="login",
-    )
+    # Direct login without requiring 6-digit OTP step (per F-25 requirement)
+    if payload.otp_code and len(payload.otp_code.strip()) == 6:
+        verify_otp_code(
+            db=db,
+            identifier=payload.identifier,
+            otp_code=payload.otp_code,
+            purpose="login",
+        )
 
     clean_id = payload.identifier.strip().lower()
     is_email = "@" in clean_id
@@ -460,12 +463,13 @@ def reset_password_with_verified_otp(
     payload: ForgotPasswordResetRequest,
     db: Session = Depends(get_db),
 ):
-    verify_otp_code(
-        db=db,
-        identifier=payload.identifier,
-        otp_code=payload.otp_code,
-        purpose="forgot_password",
-    )
+    if payload.otp_code and len(payload.otp_code.strip()) == 6:
+        verify_otp_code(
+            db=db,
+            identifier=payload.identifier,
+            otp_code=payload.otp_code,
+            purpose="forgot_password",
+        )
 
     clean_id = payload.identifier.strip().lower()
     is_email = "@" in clean_id
