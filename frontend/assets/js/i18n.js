@@ -32,7 +32,7 @@
 
       // Hero Section (Exact match with DEMO Website Interface.jpg)
       hero_kicker: 'NYOB ZOO · ZOO SIAB TXAIS TOS',
-      hero_headline_html: 'lo lus,<br>pab <span class="accent-orange">peb sib</span><br>to taub.',
+      hero_headline_html: 'Lo lus,<br>pab <span class="accent-orange">peb sib</span><br>to taub.',
       hero_desc: 'Nyob Zoo pab koj txhais lus Hmoob, lus Kinh thiab lus Askiv. Txhais cov lus tshiab, mloog lub suab thiab khaws cov lus uas koj tau kawm cia saib dua.',
       hero_active_block: 'Khối kawm lus tam sim no:',
 
@@ -116,11 +116,11 @@
       prof_metric_3_sub: '(Tổng câu đúng / Tổng câu quiz đã tạo) × 100%',
 
       // Auth Modal
-      auth_title: 'Nkag Mus / Sau Npe (Đăng Nhập & Đăng Ký)',
-      auth_subtitle: 'Xaiv Google, Facebook los sis Xov Tooj OTP',
-      auth_forgot_link: 'Koj hnov qab mật khẩu?',
-      auth_send_otp: 'Xa Mã OTP Xác Thực',
-      auth_verify_login: 'Xác Thực & Nkag Mus',
+      auth_title: 'Nkag Mus / Thiết Lập Khối Học Tập',
+      auth_subtitle: 'Sau Npe / Gmail thiab xaiv Khối lus kawm kom nkag mus tam sim',
+      auth_forgot_link: 'Hloov mật khẩu?',
+      auth_send_otp: 'Nkag Mus',
+      auth_verify_login: '✦ Vào Học Ngay',
       auth_terms_label: 'Kuv pom zoo rau cov điều khoản dịch vụ thiab tso cai siv thông tin cá nhân.',
       auth_terms_error: '⚠️ Koj yuav tsum tích pom zoo điều khoản dịch vụ ua ntej!',
       pop_save_btn: '＋ Lưu vào Sổ tay'
@@ -147,7 +147,7 @@
 
       // Hero Section
       hero_kicker: 'NYOB ZOO · CHÀO MỪNG BẠN ĐẾN TẢ VAN',
-      hero_headline_html: 'ngôn từ,<br>giúp <span class="accent-orange">chúng ta</span><br>hiểu nhau.',
+      hero_headline_html: 'Ngôn từ,<br>giúp <span class="accent-orange">chúng ta</span><br>hiểu nhau.',
       hero_desc: 'Nyob Zoo (Trilinguo) giúp bạn dịch thuật 3 chiều Anh – Kinh (Việt) – Hmong, nghe phát âm chuẩn và lưu từ vựng vào Sổ tay cá nhân để luyện Flashcard & Quiz.',
       hero_active_block: 'Khối ngôn ngữ đang học:',
 
@@ -231,11 +231,11 @@
       prof_metric_3_sub: '(Tổng số câu trả lời đúng / Tổng số câu quiz đã tạo) × 100%',
 
       // Auth Modal
-      auth_title: 'Đăng Nhập / Đăng Ký Trilinguo',
-      auth_subtitle: 'Xác thực qua Google, Facebook hoặc Số điện thoại (OTP)',
-      auth_forgot_link: 'Quên mật khẩu?',
-      auth_send_otp: 'Gửi mã OTP xác nhận',
-      auth_verify_login: 'Xác Thực & Hoàn Tất Đăng Nhập',
+      auth_title: 'Đăng Nhập / Thiết Lập Khối Học Tập',
+      auth_subtitle: 'Nhập Tên / Gmail và chọn Khối ngôn ngữ để vào thẳng',
+      auth_forgot_link: 'Đổi mật khẩu?',
+      auth_send_otp: 'Đăng nhập',
+      auth_verify_login: '✦ Vào Học Ngay',
       auth_terms_label: 'Tôi đồng ý với các điều khoản dịch vụ và cho phép sử dụng thông tin cá nhân',
       auth_terms_error: '⚠️ Bạn bắt buộc phải tích đồng ý điều khoản dịch vụ và cho phép sử dụng thông tin cá nhân!',
       pop_save_btn: '＋ Lưu vào Sổ tay'
@@ -262,7 +262,7 @@
 
       // Hero Section
       hero_kicker: 'NYOB ZOO · WELCOME TO TA VAN',
-      hero_headline_html: 'every word,<br>helps <span class="accent-orange">us all</span><br>understand.',
+      hero_headline_html: 'Every word,<br>helps <span class="accent-orange">us all</span><br>understand.',
       hero_desc: 'Nyob Zoo (Trilinguo) helps you translate seamlessly across English, Vietnamese (Kinh), and Hmong, listen to pronunciation, and save vocabulary to your Personal Notebook.',
       hero_active_block: 'Active Learning Block:',
 
@@ -346,11 +346,11 @@
       prof_metric_3_sub: '(Total correct quiz answers / Total quiz questions created) × 100%',
 
       // Auth Modal
-      auth_title: 'Sign In / Register — Trilinguo',
-      auth_subtitle: 'Authenticate via Google, Facebook, or Phone Number (SMS/Zalo OTP)',
-      auth_forgot_link: 'Forgot password?',
-      auth_send_otp: 'Send Verification OTP',
-      auth_verify_login: 'Verify OTP & Sign In',
+      auth_title: 'Sign In / Learning Block Setup',
+      auth_subtitle: 'Enter your Name / Gmail and choose your Language Block to start immediately',
+      auth_forgot_link: 'Change password?',
+      auth_send_otp: 'Sign In',
+      auth_verify_login: '✦ Start Learning Now',
       auth_terms_label: 'I agree to the Terms of Service and consent to the use of personal information',
       auth_terms_error: '⚠️ You must check the box agreeing to the Terms of Service and personal data usage!',
       pop_save_btn: '＋ Save to Personal Notebook'
@@ -367,6 +367,7 @@
     const valid = UI_STRINGS[lang] ? lang : 'vi';
     localStorage.setItem(STORAGE_KEY_LANG, valid);
     document.documentElement.setAttribute('lang', valid);
+    document.documentElement.setAttribute('data-display-lang', valid);
     applyTranslations(valid);
     window.dispatchEvent(new CustomEvent('trilinguo:langchange', { detail: { lang: valid } }));
   }
@@ -384,6 +385,8 @@
 
   function applyTranslations(langOverride) {
     const lang = langOverride || getDisplayLanguage();
+    document.documentElement.setAttribute('lang', lang);
+    document.documentElement.setAttribute('data-display-lang', lang);
 
     document.querySelectorAll('[data-i18n]').forEach(el => {
       const key = el.getAttribute('data-i18n');
@@ -408,6 +411,13 @@
       btn.classList.toggle('active', btnLang === lang);
     });
   }
+
+  // Sync <html lang="..."> immediately on script load to avoid font flash
+  try {
+    const initialLang = getDisplayLanguage();
+    document.documentElement.setAttribute('lang', initialLang);
+    document.documentElement.setAttribute('data-display-lang', initialLang);
+  } catch (e) {}
 
   global.TrilinguoI18n = {
     UI_STRINGS,

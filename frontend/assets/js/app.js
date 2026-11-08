@@ -160,15 +160,15 @@
     if (document.getElementById('authModalBackdrop')) return;
 
     const modalHtml = `
-      <!-- 1. AUTHENTICATION MODAL (GOOGLE OAUTH2 / FACEBOOK GRAPH / GMAIL & PHONE OTP) -->
-      <div class="modal-backdrop" id="authModalBackdrop">
+      <!-- 1. AUTHENTICATION MODAL (CHỈ NHẬP TÊN / GMAIL & CHỌN KHỐI NGÔN NGỮ LÀ VÀO THẲNG) -->
+      <div class="modal-backdrop" id="authModalBackdrop" data-func-id="F-25" data-cmp-id="CMP-GLB-AUTH">
         <div class="modal-card">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;margin-bottom:0.85rem;">
             <div style="display:flex;align-items:center;gap:0.75rem;">
               <img src="assets/images/mascot/13.svg" alt="Mascot" style="width:52px;height:52px;object-fit:contain;" />
               <div>
-                <h2 style="font-size:1.25rem;font-weight:800;color:var(--text-heading);" data-i18n="auth_title">Đăng Nhập / Đăng Ký Trilinguo</h2>
-                <p style="font-size:0.78rem;color:var(--text-muted);font-weight:600;" data-i18n="auth_subtitle">Xác thực thực tế qua Google, Facebook hoặc Mã OTP 6 số</p>
+                <h2 style="font-size:1.25rem;font-weight:800;color:var(--text-heading);" data-i18n="auth_title">Đăng Nhập / Thiết Lập Khối Học Tập</h2>
+                <p style="font-size:0.78rem;color:var(--text-muted);font-weight:600;" data-i18n="auth_subtitle">Nhập Tên / Gmail và chọn Khối ngôn ngữ để vào thẳng</p>
               </div>
             </div>
             <button type="button" id="closeAuthModalBtn" style="border:none;background:transparent;font-size:1.35rem;cursor:pointer;color:var(--text-muted);">✕</button>
@@ -194,105 +194,26 @@
             </div>
           </div>
 
-          <!-- 3 Auth Provider Tabs -->
-          <div class="auth-provider-btns">
-            <button type="button" class="auth-provider-btn active" data-provider="google">
-              <span style="font-size:1.2rem;">🌐</span>
-              <span>Google / Gmail</span>
-            </button>
-            <button type="button" class="auth-provider-btn" data-provider="facebook">
-              <span style="font-size:1.2rem;">📘</span>
-              <span>Facebook</span>
-            </button>
-            <button type="button" class="auth-provider-btn" data-provider="phone">
-              <span style="font-size:1.2rem;">📱</span>
-              <span>Số điện thoại</span>
-            </button>
-          </div>
-
-          <!-- Direct OAuth2 Redirect Button for Google / Facebook -->
-          <div id="oauthRedirectActionBox" style="margin-bottom:0.85rem;">
-            <button type="button" id="oauthDirectRedirectBtn" class="btn-tool btn-tool--outline" style="width:100%;justify-content:center;border-color:var(--color-main-turquoise);">
-              🌐 Chuyển hướng Đăng nhập Google OAuth2 (Tài khoản thật)
-            </button>
-          </div>
-
-          <form id="authMainForm" style="display:flex;flex-direction:column;gap:0.8rem;">
-            <div class="form-group" id="authIdentifierGroup">
-              <label class="form-label" id="authIdentifierLabel">Địa chỉ Gmail nhận mã OTP xác thực:</label>
-              <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
-                <input type="text" id="authIdentifierInput" class="form-control" style="flex:1;min-width:180px;" placeholder="Nhập địa chỉ Gmail của bạn..." required />
-                <button type="button" id="authSendOtpBtn" class="btn-tool btn-tool--flashcard" style="white-space:nowrap;" data-i18n="auth_send_otp">Gửi mã OTP</button>
-              </div>
-            </div>
-
-            <div class="form-group" id="authFacebookTokenGroup" style="display:none;">
-              <label class="form-label">Hoặc dán Facebook Graph Access Token (nếu test Graph API trực tiếp):</label>
-              <input type="text" id="authFacebookTokenInput" class="form-control" placeholder="EAABsbCS1iHgBO..." />
-            </div>
-
-            <div class="form-group" id="authOtpGroup">
-              <label class="form-label">Mã OTP 6 số (Hiệu lực 5 phút):</label>
-              <input type="text" id="authOtpInput" class="form-control" placeholder="Nhập 6 chữ số OTP..." maxlength="6" />
-              <small id="authOtpHint" style="font-size:0.76rem;color:var(--color-element-forest);font-weight:700;"></small>
-            </div>
-
+          <form id="authMainForm" style="display:flex;flex-direction:column;gap:0.85rem;">
             <div class="form-group">
               <label class="form-label" data-i18n="prof_name">Tên tài khoản hiển thị:</label>
               <input type="text" id="authNameInput" class="form-control" placeholder="Nhập họ tên hoặc biệt danh của bạn..." required />
             </div>
 
+            <div class="form-group" id="authIdentifierGroup">
+              <label class="form-label" id="authIdentifierLabel">Địa chỉ Gmail của bạn:</label>
+              <input type="email" id="authIdentifierInput" class="form-control" placeholder="Nhập Gmail của bạn (VD: tenban@gmail.com)..." required />
+            </div>
+
             <!-- Mandatory Terms Checkbox -->
             <label style="display:flex;align-items:flex-start;gap:0.6rem;font-size:0.82rem;font-weight:700;cursor:pointer;color:var(--text-primary);">
-              <input type="checkbox" id="authTermsCheckbox" style="width:18px;height:18px;margin-top:2px;accent-color:var(--color-main-orange);flex-shrink:0;" />
+              <input type="checkbox" id="authTermsCheckbox" checked style="width:18px;height:18px;margin-top:2px;accent-color:var(--color-main-orange);flex-shrink:0;" />
               <span data-i18n="auth_terms_label">Tôi đồng ý với các điều khoản dịch vụ và cho phép sử dụng thông tin cá nhân</span>
             </label>
 
             <button type="submit" class="translate-submit-btn" style="margin-top:0.15rem;" data-i18n="auth_verify_login">
-              ✦ Xác Thực & Hoàn Tất Đăng Nhập
+              ✦ Vào Học Ngay
             </button>
-
-            <div style="display:flex;justify-content:space-between;align-items:center;padding-top:0.3rem;flex-wrap:wrap;gap:0.5rem;">
-              <button type="button" id="openForgotModalBtn" style="border:none;background:transparent;color:var(--color-main-dark-teal);font-weight:800;font-size:0.82rem;text-decoration:underline;cursor:pointer;" data-i18n="auth_forgot_link">Quên mật khẩu?</button>
-              <span style="font-size:0.74rem;color:var(--text-muted);font-weight:600;">FastAPI + JWT Security</span>
-            </div>
-          </form>
-        </div>
-      </div>
-
-      <!-- 2. FORGOT PASSWORD MODAL (GMAIL / PHONE OTP -> RESET PASSWORD) -->
-      <div class="modal-backdrop" id="forgotModalBackdrop">
-        <div class="modal-card">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.85rem;">
-            <div style="display:flex;align-items:center;gap:0.75rem;">
-              <img src="assets/images/mascot/9.svg" alt="Mascot" style="width:50px;height:50px;object-fit:contain;" />
-              <div>
-                <h2 style="font-size:1.2rem;font-weight:800;color:var(--text-heading);">Quên Mật Khẩu (Forgot Password)</h2>
-                <p style="font-size:0.78rem;color:var(--text-muted);font-weight:600;">Xác thực mã OTP 6 số qua Gmail SMTP hoặc SĐT để đặt mật khẩu mới</p>
-              </div>
-            </div>
-            <button type="button" id="closeForgotModalBtn" style="border:none;background:transparent;font-size:1.35rem;cursor:pointer;color:var(--text-muted);">✕</button>
-          </div>
-
-          <form id="forgotPasswordForm" style="display:flex;flex-direction:column;gap:0.85rem;">
-            <div class="form-group">
-              <label class="form-label">Nhập Gmail hoặc Số điện thoại của bạn:</label>
-              <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
-                <input type="text" id="forgotIdentifierInput" class="form-control" style="flex:1;min-width:180px;" placeholder="Gmail hoặc Số điện thoại..." required />
-                <button type="button" id="forgotSendOtpBtn" class="btn-tool btn-tool--flashcard">Gửi OTP</button>
-              </div>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Mã OTP 6 số nhận được:</label>
-              <input type="text" id="forgotOtpInput" class="form-control" placeholder="Nhập 6 chữ số OTP..." maxlength="6" required />
-              <small id="forgotOtpHint" style="font-size:0.76rem;color:var(--color-element-forest);font-weight:700;"></small>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Mật khẩu mới (tối thiểu 6 ký tự):</label>
-              <input type="password" id="forgotNewPassInput" class="form-control" placeholder="Nhập mật khẩu mới..." minlength="6" required />
-            </div>
-            <button type="submit" class="translate-submit-btn">Xác Nhận OTP & Đặt Lại Mật Khẩu</button>
-            <button type="button" id="backToLoginModalBtn" class="btn-tool btn-tool--outline" style="justify-content:center;">← Quay lại Đăng nhập</button>
           </form>
         </div>
       </div>
@@ -403,133 +324,51 @@
 
         const label = document.getElementById('authIdentifierLabel');
         const input = document.getElementById('authIdentifierInput');
-        const oauthBox = document.getElementById('oauthRedirectActionBox');
-        const oauthBtn = document.getElementById('oauthDirectRedirectBtn');
-        const fbTokenGroup = document.getElementById('authFacebookTokenGroup');
+        if (!label || !input) return;
 
         if (currentAuthMethod === 'google') {
-          label.textContent = 'Địa chỉ Gmail nhận mã OTP xác thực:';
-          input.placeholder = 'Nhập Gmail thật của bạn (VD: tenban@gmail.com)...';
-          oauthBox.style.display = 'block';
-          oauthBtn.textContent = '🌐 Chuyển hướng Đăng nhập Google OAuth2 (Tài khoản thật)';
-          fbTokenGroup.style.display = 'none';
+          label.textContent = 'Địa chỉ Gmail của bạn:';
+          input.placeholder = 'Nhập Gmail của bạn (VD: tenban@gmail.com)...';
         } else if (currentAuthMethod === 'facebook') {
-          label.textContent = 'Email liên kết Facebook (nhận OTP) hoặc dùng nút OAuth2:';
-          input.placeholder = 'Nhập Email tài khoản Facebook...';
-          oauthBox.style.display = 'block';
-          oauthBtn.textContent = '📘 Chuyển hướng Đăng nhập Facebook OAuth2';
-          fbTokenGroup.style.display = 'flex';
+          label.textContent = 'Email / Tài khoản Facebook của bạn:';
+          input.placeholder = 'Nhập Email hoặc tên tài khoản Facebook...';
         } else {
-          label.textContent = 'Số điện thoại nhận mã OTP (SMS / Zalo):';
+          label.textContent = 'Số điện thoại của bạn:';
           input.placeholder = 'Nhập số điện thoại của bạn (VD: 0912345678)...';
-          oauthBox.style.display = 'none';
-          fbTokenGroup.style.display = 'none';
         }
       });
     });
 
-    // Direct OAuth2 Redirect button (Google / Facebook)
-    const oauthDirectBtn = document.getElementById('oauthDirectRedirectBtn');
-    if (oauthDirectBtn) {
-      oauthDirectBtn.addEventListener('click', async () => {
-        const termsChecked = document.getElementById('authTermsCheckbox').checked;
-        if (!termsChecked) {
-          showToast(global.TrilinguoI18n.t('auth_terms_error'), 'error');
-          return;
-        }
-        const nLang = document.getElementById('authNativeLangSelect').value;
-        const tLang = document.getElementById('authTargetLangSelect').value;
-        if (nLang === tLang) {
-          showToast('Ngôn ngữ "Tôi là" và "Tôi muốn học" phải khác nhau!', 'error');
-          return;
-        }
-        try {
-          if (currentAuthMethod === 'facebook') {
-            await global.TrilinguoAPI.startFacebookOAuthRedirect(nLang, tLang);
-          } else {
-            await global.TrilinguoAPI.startGoogleOAuthRedirect(nLang, tLang);
-          }
-        } catch (err) {
-          showToast(err.message, 'error');
-        }
-      });
-    }
-
-    // Send Real 6-digit OTP via Backend API
-    const sendOtpBtn = document.getElementById('authSendOtpBtn');
-    if (sendOtpBtn) {
-      sendOtpBtn.addEventListener('click', async () => {
-        const identifier = document.getElementById('authIdentifierInput').value.trim();
-        if (!identifier) {
-          showToast('Vui lòng nhập địa chỉ Gmail hoặc Số điện thoại trước khi lấy mã OTP!', 'error');
-          return;
-        }
-        sendOtpBtn.disabled = true;
-        const originalText = sendOtpBtn.textContent;
-        sendOtpBtn.textContent = 'Đang gửi...';
-        try {
-          const channel = currentAuthMethod === 'phone' ? 'phone' : 'email';
-          const res = await global.TrilinguoAPI.sendOtpCode({
-            channel,
-            identifier,
-            purpose: 'login'
-          });
-          const hint = document.getElementById('authOtpHint');
-          if (hint) {
-            hint.textContent = res.message || `Đã gửi mã OTP 6 số tới ${identifier}`;
-          }
-          showToast(res.message || `Đã gửi mã OTP tới ${identifier}`, 'success');
-        } catch (err) {
-          showToast(err.message, 'error');
-        } finally {
-          sendOtpBtn.disabled = false;
-          sendOtpBtn.textContent = originalText;
-        }
-      });
-    }
-
-    // Submit Auth Form (Verifies OTP or Facebook Graph Token with Backend)
+    // Submit Auth Form (Direct Login without 6-digit OTP step)
     const authForm = document.getElementById('authMainForm');
     if (authForm) {
       authForm.addEventListener('submit', async e => {
         e.preventDefault();
         try {
           const identifier = document.getElementById('authIdentifierInput').value.trim();
-          const otpCode = document.getElementById('authOtpInput').value.trim();
           const accountName = document.getElementById('authNameInput').value.trim();
           const nativeLang = document.getElementById('authNativeLangSelect').value;
           const targetLang = document.getElementById('authTargetLangSelect').value;
           const agreedTerms = document.getElementById('authTermsCheckbox').checked;
-          const fbToken = document.getElementById('authFacebookTokenInput').value.trim();
 
           if (!agreedTerms) {
             showToast(global.TrilinguoI18n.t('auth_terms_error'), 'error');
             return;
           }
-
-          let user;
-          if (currentAuthMethod === 'facebook' && fbToken) {
-            user = await global.TrilinguoAPI.verifyFacebookOAuthToken({
-              accessToken: fbToken,
-              nativeLang,
-              targetLang,
-              agreedTerms
-            });
-          } else {
-            if (!otpCode || otpCode.length !== 6) {
-              showToast('Vui lòng nhập đúng mã OTP 6 chữ số đã được gửi!', 'error');
-              return;
-            }
-            user = await global.TrilinguoAPI.verifyOtpAndLogin({
-              channel: currentAuthMethod === 'phone' ? 'phone' : 'email',
-              identifier,
-              otpCode,
-              accountName,
-              nativeLang,
-              targetLang,
-              agreedTerms
-            });
+          if (nativeLang === targetLang) {
+            showToast('Ngôn ngữ "Tôi là" và "Tôi muốn học" phải khác nhau!', 'error');
+            return;
           }
+
+          const user = await global.TrilinguoAPI.verifyOtpAndLogin({
+            channel: currentAuthMethod === 'phone' ? 'phone' : 'email',
+            identifier: identifier || accountName || 'user@trilinguo.vn',
+            otpCode: null,
+            accountName: accountName || identifier,
+            nativeLang,
+            targetLang,
+            agreedTerms
+          });
 
           closeAuthModal();
           renderHeaderState();
@@ -544,7 +383,7 @@
       });
     }
 
-    // Forgot Password Modal navigation & OTP verification
+    // Forgot Password Modal navigation (Direct password reset without OTP)
     const openForgotBtn = document.getElementById('openForgotModalBtn');
     const closeForgotBtn = document.getElementById('closeForgotModalBtn');
     const backToLoginBtn = document.getElementById('backToLoginModalBtn');
@@ -567,39 +406,16 @@
       });
     }
 
-    const forgotSendOtpBtn = document.getElementById('forgotSendOtpBtn');
-    if (forgotSendOtpBtn) {
-      forgotSendOtpBtn.addEventListener('click', async () => {
-        const idVal = document.getElementById('forgotIdentifierInput').value.trim();
-        if (!idVal) {
-          showToast('Vui lòng nhập Gmail hoặc Số điện thoại!', 'error');
-          return;
-        }
-        try {
-          const res = await global.TrilinguoAPI.sendOtpCode({
-            channel: idVal.includes('@') ? 'email' : 'phone',
-            identifier: idVal,
-            purpose: 'forgot_password'
-          });
-          document.getElementById('forgotOtpHint').textContent = res.message || `Đã gửi mã OTP khôi phục tới ${idVal}`;
-          showToast(res.message || 'Đã gửi mã OTP khôi phục mật khẩu!', 'success');
-        } catch (err) {
-          showToast(err.message, 'error');
-        }
-      });
-    }
-
     const forgotForm = document.getElementById('forgotPasswordForm');
     if (forgotForm) {
       forgotForm.addEventListener('submit', async e => {
         e.preventDefault();
         try {
           const identifier = document.getElementById('forgotIdentifierInput').value.trim();
-          const otpCode = document.getElementById('forgotOtpInput').value.trim();
           const newPassword = document.getElementById('forgotNewPassInput').value;
           const res = await global.TrilinguoAPI.resetPasswordWithOtp({
             identifier,
-            otpCode,
+            otpCode: null,
             newPassword
           });
           showToast(res.message || 'Đặt lại mật khẩu mới thành công!', 'success');
