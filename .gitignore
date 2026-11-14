@@ -1,0 +1,15 @@
+# Python cache & virtual environment
+__pycache__/
+*.py[cod]
+venv/
+backend/venv/
+
+# Environment secrets & local SQLite database
+.env
+backend/.env
+*.db
+*.sqlite3
+
+# Runtime logs
+logs/
+backend/logs/

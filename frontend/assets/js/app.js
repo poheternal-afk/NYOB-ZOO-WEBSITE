@@ -307,8 +307,6 @@
   }
 
   function bindAuthModalEvents() {
-    const forgotBackdrop = document.getElementById('forgotModalBackdrop');
-
     document.querySelectorAll('[data-open-auth]').forEach(el => {
       el.addEventListener('click', e => {
         e.preventDefault();
@@ -319,31 +317,7 @@
     const closeBtn = document.getElementById('closeAuthModalBtn');
     if (closeBtn) closeBtn.addEventListener('click', closeAuthModal);
 
-    // Switch between Google, Facebook, Phone
-    document.querySelectorAll('.auth-provider-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('.auth-provider-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        currentAuthMethod = btn.getAttribute('data-provider');
-
-        const label = document.getElementById('authIdentifierLabel');
-        const input = document.getElementById('authIdentifierInput');
-        if (!label || !input) return;
-
-        if (currentAuthMethod === 'google') {
-          label.textContent = 'Địa chỉ Gmail của bạn:';
-          input.placeholder = 'Nhập Gmail của bạn (VD: tenban@gmail.com)...';
-        } else if (currentAuthMethod === 'facebook') {
-          label.textContent = 'Email / Tài khoản Facebook của bạn:';
-          input.placeholder = 'Nhập Email hoặc tên tài khoản Facebook...';
-        } else {
-          label.textContent = 'Số điện thoại của bạn:';
-          input.placeholder = 'Nhập số điện thoại của bạn (VD: 0912345678)...';
-        }
-      });
-    });
-
-    // Submit Auth Form (Direct Login without 6-digit OTP step)
+    // Submit Auth Form (Direct Login with Name / Gmail & Learning Block)
     const authForm = document.getElementById('authMainForm');
     if (authForm) {
       authForm.addEventListener('submit', async e => {
@@ -365,9 +339,8 @@
           }
 
           const user = await global.TrilinguoAPI.verifyOtpAndLogin({
-            channel: currentAuthMethod === 'phone' ? 'phone' : 'email',
+            channel: 'email',
             identifier: identifier || accountName || 'user@trilinguo.vn',
-            otpCode: null,
             accountName: accountName || identifier,
             nativeLang,
             targetLang,
@@ -391,50 +364,6 @@
             );
             await refreshActivePageData();
           }
-        } catch (err) {
-          showToast(err.message, 'error');
-        }
-      });
-    }
-
-    // Forgot Password Modal navigation (Direct password reset without OTP)
-    const openForgotBtn = document.getElementById('openForgotModalBtn');
-    const closeForgotBtn = document.getElementById('closeForgotModalBtn');
-    const backToLoginBtn = document.getElementById('backToLoginModalBtn');
-
-    if (openForgotBtn) {
-      openForgotBtn.addEventListener('click', () => {
-        closeAuthModal();
-        if (forgotBackdrop) forgotBackdrop.classList.add('is-open');
-      });
-    }
-    if (closeForgotBtn) {
-      closeForgotBtn.addEventListener('click', () => {
-        if (forgotBackdrop) forgotBackdrop.classList.remove('is-open');
-      });
-    }
-    if (backToLoginBtn) {
-      backToLoginBtn.addEventListener('click', () => {
-        if (forgotBackdrop) forgotBackdrop.classList.remove('is-open');
-        openAuthModal();
-      });
-    }
-
-    const forgotForm = document.getElementById('forgotPasswordForm');
-    if (forgotForm) {
-      forgotForm.addEventListener('submit', async e => {
-        e.preventDefault();
-        try {
-          const identifier = document.getElementById('forgotIdentifierInput').value.trim();
-          const newPassword = document.getElementById('forgotNewPassInput').value;
-          const res = await global.TrilinguoAPI.resetPasswordWithOtp({
-            identifier,
-            otpCode: null,
-            newPassword
-          });
-          showToast(res.message || 'Đặt lại mật khẩu mới thành công!', 'success');
-          if (forgotBackdrop) forgotBackdrop.classList.remove('is-open');
-          openAuthModal();
         } catch (err) {
           showToast(err.message, 'error');
         }
@@ -1463,9 +1392,8 @@
     initTheme();
     injectModalsAndPopover();
 
-    // Check for OAuth2 callback token (?auth_token=...) or refresh active JWT session
+    // Refresh active JWT session if logged in
     try {
-      await global.TrilinguoAPI.handleOAuthRedirectTokenIfPresent();
       if (global.TrilinguoAPI.isLoggedIn()) {
         await global.TrilinguoAPI.fetchCurrentUser();
       }

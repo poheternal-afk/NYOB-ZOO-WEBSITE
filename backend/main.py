@@ -9,11 +9,10 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from starlette.middleware.sessions import SessionMiddleware
 
 from sqlalchemy import text
 from config import settings
-from database import engine, Base, SessionLocal
+from database import engine, Base
 from logger_lib import RequestLoggingMiddleware, log_api_event
 from routers import auth, translate, phrases, notebook, profile, system_logs, admin
 
@@ -38,11 +37,18 @@ def ensure_rbac_columns_and_super_admin() -> None:
         try:
             conn.execute(
                 text(
-                    "UPDATE users SET role = 'super_admin', is_active = 1 WHERE LOWER(email) = 'poheternal@gmail.com'"
+                    "UPDATE users SET role = 'super_admin', is_active = TRUE WHERE LOWER(email) = 'poheternal@gmail.com'"
                 )
             )
         except Exception:
-            pass
+            try:
+                conn.execute(
+                    text(
+                        "UPDATE users SET role = 'super_admin', is_active = 1 WHERE LOWER(email) = 'poheternal@gmail.com'"
+                    )
+                )
+            except Exception:
+                pass
 
 
 ensure_rbac_columns_and_super_admin()
@@ -52,7 +58,7 @@ app = FastAPI(
     title=settings.APP_NAME,
     description=(
         "Production Backend API for NYOB ZOO · Trilinguo (English - Vietnamese/Kinh - Hmong) "
-        "with Real Google OAuth2, Facebook Graph API, Gmail SMTP OTP, and Language Learning Blocks."
+        "with Language Learning Blocks, RBAC & Admin Portal."
     ),
     version="2.0.0",
 )
@@ -66,13 +72,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 2. Session Middleware (Used for OAuth state / session security)
-app.add_middleware(
-    SessionMiddleware,
-    secret_key=settings.JWT_SECRET_KEY,
-)
-
-# 2.5. Structured Request & Error Logging Middleware
+# 2. Structured Request & Error Logging Middleware
 app.add_middleware(RequestLoggingMiddleware)
 
 # 3. Register API Routers
@@ -91,11 +91,6 @@ def health_check():
         "status": "ok",
         "service": settings.APP_NAME,
         "environment": settings.APP_ENV,
-        "oauth_configured": {
-            "google": bool(settings.GOOGLE_CLIENT_ID),
-            "facebook": bool(settings.FACEBOOK_APP_ID),
-            "smtp": bool(settings.SMTP_USER and settings.SMTP_PASSWORD),
-        },
     }
 
 

@@ -19,11 +19,12 @@
 
   const API_BASE_URL = (
     global.TRILINGUO_API_BASE_URL ||
+    localStorage.getItem('trilinguo_custom_api_url') ||
     (window.location.port === '8000'
       ? `${window.location.origin}/api`
       : IS_LOCALHOST
         ? 'http://localhost:8000/api'
-        : '')
+        : `${window.location.origin}/api`)
   ).replace(/\/+$/, '');
 
   const TOKEN_STORAGE_KEY = 'trilinguo_jwt_token';
@@ -553,6 +554,9 @@
     if (contentType.includes('application/json')) {
       data = await response.json();
     } else {
+      if (response.status === 404 || response.status === 405 || response.status >= 500) {
+        throw new Error('VERCEL_STATIC_MODE');
+      }
       const txt = await response.text();
       data = { detail: txt };
     }
@@ -581,59 +585,12 @@
   }
 
   /**
-   * Check URL query parameters for ?auth_token=... returned by Google/Facebook OAuth2 Callback
+   * 1. AUTHENTICATION & DIRECT LOGIN METHODS
    */
-  async function handleOAuthRedirectTokenIfPresent() {
-    const params = new URLSearchParams(window.location.search);
-    const urlToken = params.get('auth_token');
-    if (!urlToken) return null;
-
-    localStorage.setItem(TOKEN_STORAGE_KEY, urlToken);
-    params.delete('auth_token');
-    const cleanSearch = params.toString();
-    const newUrl =
-      window.location.pathname +
-      (cleanSearch ? `?${cleanSearch}` : '') +
-      window.location.hash;
-    window.history.replaceState({}, document.title, newUrl);
-
-    try {
-      const me = await apiRequest('/auth/me', { method: 'GET' });
-      return setSession(urlToken, me);
-    } catch (e) {
-      return getCurrentUser();
-    }
-  }
-
-  /**
-   * 1. AUTHENTICATION, OAUTH2 & DIRECT LOGIN METHODS
-   */
-  async function sendOtpCode({ channel = 'email', identifier, purpose = 'login' }) {
-    const cleanId = (identifier || '').trim();
-    const detectedChannel = cleanId.includes('@') ? 'email' : channel || 'phone';
-    try {
-      return await apiRequest('/auth/otp/send', {
-        method: 'POST',
-        body: JSON.stringify({
-          identifier: cleanId,
-          channel: detectedChannel,
-          purpose
-        })
-      });
-    } catch (err) {
-      if (isFallbackError(err)) {
-        return { message: 'Ready', channel: detectedChannel };
-      }
-      throw err;
-    }
-  }
-
   async function verifyOtpAndLogin({
     channel = 'email',
     identifier,
-    otpCode,
     accountName,
-    password,
     nativeLang,
     targetLang,
     agreedTerms
@@ -649,9 +606,7 @@
         body: JSON.stringify({
           identifier: effectiveIdentifier,
           channel: effectiveIdentifier.includes('@') ? 'email' : channel,
-          otp_code: otpCode ? (otpCode || '').trim() : null,
           account_name: accountName || null,
-          password: password || null,
           native_lang: nativeLang || 'vi',
           target_lang: targetLang || 'hmn',
           accepted_terms: Boolean(agreedTerms)
@@ -708,109 +663,6 @@
           learning_block: `${nLang}_${tLang}`
         };
         return setSession('trilinguo_vercel_session_token', fallbackUser);
-      }
-      throw err;
-    }
-  }
-
-  async function loginWithPassword({ identifier, password, nativeLang, targetLang }) {
-    try {
-      const res = await apiRequest('/auth/login/password', {
-        method: 'POST',
-        body: JSON.stringify({
-          identifier: (identifier || '').trim(),
-          password,
-          native_lang: nativeLang || null,
-          target_lang: targetLang || null,
-          accepted_terms: true
-        })
-      });
-      return setSession(res.access_token, res.user);
-    } catch (err) {
-      if (isFallbackError(err)) {
-        return verifyOtpAndLogin({
-          identifier,
-          accountName: identifier,
-          nativeLang,
-          targetLang,
-          agreedTerms: true
-        });
-      }
-      throw err;
-    }
-  }
-
-  async function startGoogleOAuthRedirect(nativeLang = 'vi', targetLang = 'hmn') {
-    const data = await apiRequest(
-      `/auth/google/login?native_lang=${encodeURIComponent(nativeLang)}&target_lang=${encodeURIComponent(targetLang)}`,
-      { method: 'GET' }
-    );
-    if (data && data.auth_url) {
-      window.location.href = data.auth_url;
-    }
-  }
-
-  async function verifyGoogleOAuthToken({
-    idToken,
-    accessToken,
-    nativeLang,
-    targetLang,
-    agreedTerms
-  }) {
-    const res = await apiRequest('/auth/google/token', {
-      method: 'POST',
-      body: JSON.stringify({
-        id_token: idToken || null,
-        access_token: accessToken || null,
-        native_lang: nativeLang || 'vi',
-        target_lang: targetLang || 'hmn',
-        accepted_terms: Boolean(agreedTerms)
-      })
-    });
-    return setSession(res.access_token, res.user);
-  }
-
-  async function startFacebookOAuthRedirect(nativeLang = 'vi', targetLang = 'hmn') {
-    const data = await apiRequest(
-      `/auth/facebook/login?native_lang=${encodeURIComponent(nativeLang)}&target_lang=${encodeURIComponent(targetLang)}`,
-      { method: 'GET' }
-    );
-    if (data && data.auth_url) {
-      window.location.href = data.auth_url;
-    }
-  }
-
-  async function verifyFacebookOAuthToken({
-    accessToken,
-    nativeLang,
-    targetLang,
-    agreedTerms
-  }) {
-    const res = await apiRequest('/auth/facebook/token', {
-      method: 'POST',
-      body: JSON.stringify({
-        access_token: accessToken,
-        native_lang: nativeLang || 'vi',
-        target_lang: targetLang || 'hmn',
-        accepted_terms: Boolean(agreedTerms)
-      })
-    });
-    return setSession(res.access_token, res.user);
-  }
-
-  async function resetPasswordWithOtp({ identifier, otpCode, newPassword }) {
-    try {
-      return await apiRequest('/auth/forgot-password/reset', {
-        method: 'POST',
-        body: JSON.stringify({
-          identifier: (identifier || '').trim(),
-          otp_code: otpCode ? (otpCode || '').trim() : null,
-          new_password: newPassword
-        })
-      });
-    } catch (err) {
-      if (isFallbackError(err)) {
-        return { message: 'Đã cập nhật mật khẩu thành công!' };
       }
       throw err;
     }
@@ -1756,15 +1608,7 @@
     makeBlockKey,
     getActiveBlockKey,
     apiRequest,
-    handleOAuthRedirectTokenIfPresent,
-    sendOtpCode,
     verifyOtpAndLogin,
-    loginWithPassword,
-    startGoogleOAuthRedirect,
-    verifyGoogleOAuthToken,
-    startFacebookOAuthRedirect,
-    verifyFacebookOAuthToken,
-    resetPasswordWithOtp,
     fetchCurrentUser,
     signOut,
     translateViaBackend,

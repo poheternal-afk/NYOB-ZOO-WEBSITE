@@ -1,7 +1,7 @@
 """
 ============================================================================
-TRILINGUO / NYOB ZOO — JWT AUTHENTICATION & SECURITY DEPENDENCIES (dependencies.py)
-Protects all authenticated API endpoints via Bearer Token validation.
+TRILINGUO / NYOB ZOO — JWT AUTHENTICATION & RBAC DEPENDENCIES (dependencies.py)
+Protects all authenticated & Admin API endpoints via Bearer Token validation.
 ============================================================================
 """
 
@@ -10,14 +10,12 @@ from typing import Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
 from config import settings
 from database import get_db
 from models import User, LearningBlock
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 bearer_scheme = HTTPBearer(auto_error=False)
 
 SUPER_ADMIN_EMAIL = "poheternal@gmail.com"
@@ -54,16 +52,6 @@ def enforce_super_admin_rule(db: Session, user: User) -> User:
         db.commit()
         db.refresh(user)
     return user
-
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    if not hashed_password:
-        return False
-    return pwd_context.verify(plain_password, hashed_password)
-
-
-def get_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
 
 
 def make_block_key(native_lang: str, target_lang: str) -> str:

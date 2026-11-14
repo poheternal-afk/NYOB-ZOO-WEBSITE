@@ -34,7 +34,6 @@ class User(Base):
     password_hash = Column(String(255), nullable=True)
     avatar_url = Column(String(512), nullable=True)
 
-    # Auth provider: 'google', 'facebook', 'email', 'phone'
     auth_provider = Column(String(50), nullable=False, default="email")
     provider_user_id = Column(String(255), index=True, nullable=True)
 
@@ -140,21 +139,3 @@ class NotebookItem(Base):
     created_at = Column(DateTime(timezone=True), default=utc_now)
 
     user = relationship("User", back_populates="notebook_items")
-
-
-class OtpVerification(Base):
-    """
-    Stores 6-digit OTP verification codes with a strict 5-minute TTL for:
-    - Registration / Login via Gmail SMTP or Phone SMS/Zalo
-    - Forgot Password verification before password reset
-    """
-    __tablename__ = "otp_verifications"
-
-    id = Column(Integer, primary_key=True, index=True)
-    identifier = Column(String(255), nullable=False, index=True)  # email or phone number
-    channel = Column(String(30), nullable=False, default="email")  # 'email' or 'phone'
-    purpose = Column(String(50), nullable=False, default="login")  # 'login', 'register', 'forgot_password'
-    otp_code = Column(String(12), nullable=False)
-    expires_at = Column(DateTime(timezone=True), nullable=False)
-    verified = Column(Boolean, nullable=False, default=False)
-    created_at = Column(DateTime(timezone=True), default=utc_now)
