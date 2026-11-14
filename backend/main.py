@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from config import settings
 from database import ensure_db_ready
 from logger_lib import RequestLoggingMiddleware, log_api_event
-from routers import auth, translate, phrases, notebook, profile, system_logs, admin
+from routers import auth, translate, phrases, notebook, profile, system_logs, admin, corpus
 
 # Initialize DB immediately when running locally; on Vercel Serverless, get_db() initializes lazily
 if not os.getenv("VERCEL"):
@@ -50,6 +50,7 @@ app.include_router(phrases.router)
 app.include_router(notebook.router)
 app.include_router(profile.router)
 app.include_router(admin.router)
+app.include_router(corpus.router)
 app.include_router(system_logs.router)
 
 

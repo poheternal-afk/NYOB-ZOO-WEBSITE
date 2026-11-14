@@ -20,6 +20,7 @@
       nav_history: 'Keeb Kwm Txhais Lus',
       nav_phrases: 'Kab Lus Siv Ntau',
       nav_notebook: 'Kuv Cov Lus (Sổ Tay)',
+      nav_contribute: '🌱 Pab Lus Hmoob',
       nav_account_prefix: 'Tus Tswv:',
 
       // Language Names
@@ -135,6 +136,7 @@
       nav_history: 'Nhật ký dịch thuật',
       nav_phrases: 'Mẫu câu thông dụng',
       nav_notebook: 'Sổ tay cá nhân',
+      nav_contribute: '🌱 Đóng góp từ vựng',
       nav_account_prefix: 'Tài khoản:',
 
       // Language Names
@@ -250,6 +252,7 @@
       nav_history: 'Translation History',
       nav_phrases: 'Commonly Used Phrases',
       nav_notebook: 'Personal Notebook',
+      nav_contribute: '🌱 Contribute',
       nav_account_prefix: 'Account:',
 
       // Language Names

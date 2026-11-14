@@ -1597,6 +1597,487 @@
     }
   }
 
+  /**
+   * 7. COMMUNITY CONTRIBUTION & ADMIN CORPUS TRAINING API METHODS
+   */
+  const LOCAL_CORPUS_KEY = 'trilinguo_local_corpus_v1';
+  const LOCAL_DOC_LOGS_KEY = 'trilinguo_local_corpus_doc_logs_v1';
+
+  function ensureLocalCorpusList() {
+    let list = [];
+    try {
+      const raw = localStorage.getItem(LOCAL_CORPUS_KEY);
+      if (raw) list = JSON.parse(raw);
+    } catch (e) {
+      list = [];
+    }
+    if (!Array.isArray(list) || list.length === 0) {
+      list = [
+        {
+          id: 901,
+          hmn_text: 'Paj ntaub Hmoob zoo nkauj heev',
+          vi_text: 'Thổ cẩm người Mông đẹp lắm',
+          en_text: 'Hmong embroidered textile is very beautiful',
+          phonetic: 'pa ndao Hmoob zhong ngao heh',
+          pos_code: '(nth) nthe',
+          note: 'Đóng góp bởi Giàng Thị Mỷ',
+          source_type: 'user_contribution',
+          source_name: 'Giàng Thị Mỷ',
+          revision_count: 2,
+          created_at: new Date(Date.now() - 86400000 * 3).toISOString(),
+          updated_at: new Date(Date.now() - 3600000 * 12).toISOString()
+        },
+        {
+          id: 902,
+          hmn_text: 'Koj puas xav haus tshuaj yej roob?',
+          vi_text: 'Bạn có muốn uống trà thảo mộc vùng cao không?',
+          en_text: 'Would you like to drink mountain herbal tea?',
+          phonetic: 'kaw poua sa hao choua yeh rong',
+          pos_code: '(nth) nthe',
+          note: 'Học từ tài liệu giao_tiep_ta_van_2026.csv',
+          source_type: 'admin_document',
+          source_name: 'giao_tiep_ta_van_2026.csv',
+          revision_count: 1,
+          created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
+          updated_at: new Date(Date.now() - 86400000 * 2).toISOString()
+        },
+        {
+          id: 903,
+          hmn_text: 'Lub caij qoob loo siav daj vog',
+          vi_text: 'Mùa lúa chín vàng rực rỡ',
+          en_text: 'The golden ripe harvest season',
+          phonetic: 'loo chai kong law shia da vaw',
+          pos_code: '(nth) nthe',
+          note: 'Đóng góp bởi Sùng A Páo',
+          source_type: 'user_contribution',
+          source_name: 'Sùng A Páo',
+          revision_count: 1,
+          created_at: new Date(Date.now() - 86400000).toISOString(),
+          updated_at: new Date(Date.now() - 86400000).toISOString()
+        }
+      ];
+      localStorage.setItem(LOCAL_CORPUS_KEY, JSON.stringify(list));
+    }
+    if (global.TrilinguoData && global.TrilinguoData.registerLearnedEntries) {
+      global.TrilinguoData.registerLearnedEntries(list);
+    }
+    return list;
+  }
+
+  function saveLocalCorpusList(list) {
+    try {
+      localStorage.setItem(LOCAL_CORPUS_KEY, JSON.stringify(list));
+    } catch (e) {
+      console.warn('Corpus cache write notice:', e);
+    }
+    if (global.TrilinguoData && global.TrilinguoData.registerLearnedEntries) {
+      global.TrilinguoData.registerLearnedEntries(list);
+    }
+  }
+
+  function ensureLocalDocLogs() {
+    try {
+      const raw = localStorage.getItem(LOCAL_DOC_LOGS_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (e) {
+      // ignore
+    }
+    const seed = [
+      {
+        id: 1,
+        filename: 'giao_tiep_ta_van_2026.csv',
+        file_format: 'csv',
+        total_lines: 25,
+        learned_count: 22,
+        updated_count: 3,
+        uploaded_by_email: SUPER_ADMIN_EMAIL,
+        created_at: new Date(Date.now() - 86400000 * 2).toISOString()
+      }
+    ];
+    localStorage.setItem(LOCAL_DOC_LOGS_KEY, JSON.stringify(seed));
+    return seed;
+  }
+
+  function mergeCorpusText(oldVal, newVal) {
+    const o = String(oldVal || '').trim();
+    const n = String(newVal || '').trim();
+    if (!o) return n;
+    if (!n) return o;
+    const norm = global.TrilinguoData
+      ? global.TrilinguoData.normalizeText
+      : s => String(s || '').toLowerCase().trim();
+    const parts = o.split('/').map(p => norm(p)).filter(Boolean);
+    if (parts.includes(norm(n))) return o;
+    return `${o} / ${n}`;
+  }
+
+  function upsertLocalCorpusItem({
+    hmn_text,
+    vi_text,
+    en_text,
+    note,
+    source_type = 'user_contribution',
+    source_name = 'Học viên Trilinguo'
+  }) {
+    const list = ensureLocalCorpusList();
+    const norm = global.TrilinguoData
+      ? global.TrilinguoData.normalizeText
+      : s => String(s || '').toLowerCase().trim();
+    const genPhon =
+      global.TrilinguoData && global.TrilinguoData.generateHmongPhonetics
+        ? global.TrilinguoData.generateHmongPhonetics
+        : s => s;
+
+    const cleanHmn = String(hmn_text || '').trim();
+    const cleanVi = String(vi_text || '').trim();
+    const cleanEn = String(en_text || '').trim();
+    const cleanNote = String(note || '').trim();
+    const targetNorm = norm(cleanHmn);
+
+    const existing = list.find(item => norm(item.hmn_text) === targetNorm);
+    if (existing) {
+      existing.vi_text = mergeCorpusText(existing.vi_text, cleanVi);
+      existing.en_text = mergeCorpusText(existing.en_text, cleanEn);
+      if (cleanNote && !String(existing.note || '').includes(cleanNote)) {
+        existing.note = existing.note
+          ? `${existing.note} · ${cleanNote}`
+          : cleanNote;
+      }
+      existing.revision_count = Number(existing.revision_count || 1) + 1;
+      existing.updated_at = new Date().toISOString();
+      saveLocalCorpusList(list);
+      return { entry: existing, isNew: false };
+    }
+
+    const newEntry = {
+      id: Date.now() + Math.floor(Math.random() * 1000),
+      hmn_text: cleanHmn,
+      vi_text: cleanVi,
+      en_text: cleanEn,
+      phonetic: genPhon(cleanHmn),
+      pos_code: '(nth) nthe',
+      note:
+        cleanNote ||
+        (source_type === 'admin_document'
+          ? `Học từ tài liệu ${source_name}`
+          : `Đóng góp bởi ${source_name}`),
+      source_type,
+      source_name,
+      revision_count: 1,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    list.unshift(newEntry);
+    saveLocalCorpusList(list);
+    return { entry: newEntry, isNew: true };
+  }
+
+  function parseDocumentContentInBrowser(filename, rawContent) {
+    const content = String(rawContent || '').trim();
+    if (!content) return [];
+    const ext = String(filename || '')
+      .toLowerCase()
+      .split('.')
+      .pop();
+    const extracted = [];
+
+    // 1. JSON format
+    if (ext === 'json' || content.startsWith('[') || content.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(content);
+        const arr = Array.isArray(parsed)
+          ? parsed
+          : parsed.entries || parsed.items || [parsed];
+        if (Array.isArray(arr)) {
+          arr.forEach(obj => {
+            if (!obj || typeof obj !== 'object') return;
+            const hmn = String(
+              obj.hmn_text || obj.hmn || obj.hmong || ''
+            ).trim();
+            const vi = String(
+              obj.vi_text || obj.vi || obj.vietnamese || obj.kinh || ''
+            ).trim();
+            const en = String(
+              obj.en_text || obj.en || obj.english || ''
+            ).trim();
+            const note = String(obj.note || obj.example || '').trim();
+            if (hmn && (vi || en)) {
+              extracted.push({
+                hmn_text: hmn,
+                vi_text: vi,
+                en_text: en,
+                note
+              });
+            }
+          });
+          if (extracted.length > 0) return extracted;
+        }
+      } catch (e) {
+        // Fallback to line parser
+      }
+    }
+
+    // 2. Line-by-line parser (.csv, .tsv, .txt, .md)
+    const lines = content.split(/\r?\n/);
+    lines.forEach((rawLine, idx) => {
+      let line = rawLine.trim();
+      if (!line || line.startsWith('#') || line.startsWith('//')) return;
+      line = line.replace(/^(?:\d+[.)]\s*|[-*•]\s*)/, '').trim();
+      if (!line) return;
+
+      let parts = [];
+      const seps = ['|', '\t', ';', ' — ', ' - ', ' = ', ' : '];
+      for (const sep of seps) {
+        if (line.includes(sep)) {
+          parts = line.split(sep).map(s => s.replace(/^["']|["']$/g, '').trim());
+          break;
+        }
+      }
+      if (parts.length === 0 && line.includes(',')) {
+        parts = line.split(',').map(s => s.replace(/^["']|["']$/g, '').trim());
+      }
+
+      if (parts.length >= 2) {
+        const hmn = parts[0] || '';
+        const vi = parts[1] || '';
+        const en = parts[2] || '';
+        const note = parts[3] || '';
+        const low = hmn.toLowerCase();
+        if (
+          idx === 0 &&
+          ['hmn', 'hmong', 'hmn_text', 'tiếng mông', 'tiếng hmong'].includes(low)
+        ) {
+          return;
+        }
+        if (hmn && (vi || en)) {
+          extracted.push({
+            hmn_text: hmn,
+            vi_text: vi,
+            en_text: en,
+            note
+          });
+        }
+      }
+    });
+
+    return extracted;
+  }
+
+  async function getCorpusEntries({ source_type = 'all', search = '' } = {}) {
+    try {
+      const params = new URLSearchParams();
+      if (source_type && source_type !== 'all') {
+        params.set('source_type', source_type);
+      }
+      if (search) {
+        params.set('search', search);
+      }
+      const q = params.toString() ? `?${params.toString()}` : '';
+      const res = await apiRequest(`/corpus/entries${q}`, { method: 'GET' });
+      if (res && Array.isArray(res.items)) {
+        saveLocalCorpusList(res.items);
+      }
+      return res;
+    } catch (err) {
+      if (isFallbackError(err)) {
+        const allItems = ensureLocalCorpusList();
+        const docLogs = ensureLocalDocLogs();
+        const userCount = allItems.filter(
+          r => r.source_type === 'user_contribution'
+        ).length;
+        const adminCount = allItems.filter(
+          r => r.source_type === 'admin_document'
+        ).length;
+
+        let filtered = [...allItems];
+        if (source_type && source_type !== 'all') {
+          filtered = filtered.filter(r => r.source_type === source_type);
+        }
+        if (search && search.trim()) {
+          const q = search.trim().toLowerCase();
+          filtered = filtered.filter(
+            r =>
+              (r.hmn_text || '').toLowerCase().includes(q) ||
+              (r.vi_text || '').toLowerCase().includes(q) ||
+              (r.en_text || '').toLowerCase().includes(q) ||
+              (r.source_name || '').toLowerCase().includes(q)
+          );
+        }
+        return {
+          total_entries: allItems.length,
+          user_contributions_count: userCount,
+          admin_documents_count: adminCount,
+          total_documents_uploaded: docLogs.length,
+          items: filtered,
+          document_logs: docLogs
+        };
+      }
+      throw err;
+    }
+  }
+
+  async function submitUserContribution({ hmnText, viText, enText, note }) {
+    const cleanHmn = String(hmnText || '').trim();
+    const cleanVi = String(viText || '').trim();
+    const cleanEn = String(enText || '').trim();
+    const cleanNote = String(note || '').trim();
+
+    if (!cleanHmn) {
+      throw new Error('Vui lòng nhập từ hoặc câu Tiếng Hmong!');
+    }
+    if (!cleanVi && !cleanEn) {
+      throw new Error(
+        'Bắt buộc phải nhập ít nhất 1 trong 2 bản dịch (Tiếng Việt hoặc Tiếng Anh), không được để trống cả hai!'
+      );
+    }
+
+    try {
+      const res = await apiRequest('/corpus/contribute', {
+        method: 'POST',
+        body: JSON.stringify({
+          hmn_text: cleanHmn,
+          vi_text: cleanVi,
+          en_text: cleanEn,
+          note: cleanNote
+        })
+      });
+      if (res && res.entry) {
+        upsertLocalCorpusItem(res.entry);
+      }
+      return res;
+    } catch (err) {
+      if (isFallbackError(err)) {
+        const u = getCurrentUser();
+        const contributorName = u
+          ? u.accountName || u.email
+          : 'Học viên Cộng đồng';
+        const { entry, isNew } = upsertLocalCorpusItem({
+          hmn_text: cleanHmn,
+          vi_text: cleanVi,
+          en_text: cleanEn,
+          note: cleanNote,
+          source_type: 'user_contribution',
+          source_name: contributorName
+        });
+        return {
+          status: 'learned',
+          is_new: isNew,
+          message: isNew
+            ? `Đã thêm mới '${cleanHmn}' vào Kho tri thức hệ thống!`
+            : `Từ/câu '${cleanHmn}' đã có sẵn và vừa được hệ thống tự động hợp nhất, bổ sung thêm bản dịch mới (Lần cập nhật #${entry.revision_count})!`,
+          entry
+        };
+      }
+      throw err;
+    }
+  }
+
+  async function adminUploadCorpusDocument({ filename, content, entries }) {
+    const cleanName = String(filename || 'tai_lieu_admin.txt').trim();
+    const parsedEntries =
+      Array.isArray(entries) && entries.length > 0
+        ? entries
+        : parseDocumentContentInBrowser(cleanName, content);
+
+    if (!parsedEntries || parsedEntries.length === 0) {
+      throw new Error(
+        'Không tìm thấy cặp từ/câu hợp lệ trong tài liệu. Đảm bảo mỗi dòng có Tiếng Hmong và ít nhất 1 bản dịch (Tiếng Việt hoặc Tiếng Anh), phân tách bằng dấu "|", dấu phẩy ",", tab hoặc dấu gạch ngang "-".'
+      );
+    }
+
+    try {
+      const res = await apiRequest('/corpus/admin/upload-document', {
+        method: 'POST',
+        body: JSON.stringify({
+          filename: cleanName,
+          content: content || '',
+          entries: parsedEntries
+        })
+      });
+      if (res && Array.isArray(res.entries)) {
+        res.entries.forEach(e => upsertLocalCorpusItem(e));
+      }
+      return res;
+    } catch (err) {
+      if (isFallbackError(err)) {
+        let learnedCount = 0;
+        let updatedCount = 0;
+        const processed = [];
+
+        parsedEntries.forEach(row => {
+          const { entry, isNew } = upsertLocalCorpusItem({
+            hmn_text: row.hmn_text,
+            vi_text: row.vi_text,
+            en_text: row.en_text,
+            note: row.note,
+            source_type: 'admin_document',
+            source_name: cleanName
+          });
+          if (isNew) learnedCount += 1;
+          else updatedCount += 1;
+          processed.push(entry);
+        });
+
+        const logs = ensureLocalDocLogs();
+        const u = getCurrentUser();
+        logs.unshift({
+          id: Date.now(),
+          filename: cleanName,
+          file_format: cleanName.split('.').pop() || 'txt',
+          total_lines: parsedEntries.length,
+          learned_count: learnedCount,
+          updated_count: updatedCount,
+          uploaded_by_email: (u && u.email) || SUPER_ADMIN_EMAIL,
+          created_at: new Date().toISOString()
+        });
+        localStorage.setItem(LOCAL_DOC_LOGS_KEY, JSON.stringify(logs.slice(0, 30)));
+
+        return {
+          status: 'trained',
+          filename: cleanName,
+          total_extracted: parsedEntries.length,
+          learned_count: learnedCount,
+          updated_count: updatedCount,
+          message: `Hệ thống đã học thành công tài liệu '${cleanName}': Thêm mới ${learnedCount} mục từ/câu và làm giàu/cập nhật ${updatedCount} mục từ có sẵn!`,
+          entries: processed.slice(0, 50)
+        };
+      }
+      throw err;
+    }
+  }
+
+  async function adminDeleteCorpusEntry(entryId) {
+    try {
+      const res = await apiRequest(`/corpus/admin/entries/${entryId}`, {
+        method: 'DELETE'
+      });
+      const list = ensureLocalCorpusList().filter(
+        x => Number(x.id) !== Number(entryId)
+      );
+      saveLocalCorpusList(list);
+      return res;
+    } catch (err) {
+      if (isFallbackError(err)) {
+        const list = ensureLocalCorpusList();
+        const target = list.find(x => Number(x.id) === Number(entryId));
+        const filtered = list.filter(x => Number(x.id) !== Number(entryId));
+        saveLocalCorpusList(filtered);
+        return {
+          status: 'deleted',
+          deleted_id: entryId,
+          message: `Đã xóa mục từ '${target ? target.hmn_text : entryId}' khỏi Kho tri thức hệ thống.`
+        };
+      }
+      throw err;
+    }
+  }
+
+  // Hydrate local corpus into TrilinguoData on boot
+  ensureLocalCorpusList();
+
   const clientExport = {
     API_BASE_URL,
     SUPER_ADMIN_EMAIL,
@@ -1629,7 +2110,12 @@
     getAdminUserProgress,
     adminUpdateUser,
     adminUpdateUserRole,
-    adminDeleteUser
+    adminDeleteUser,
+    parseDocumentContentInBrowser,
+    getCorpusEntries,
+    submitUserContribution,
+    adminUploadCorpusDocument,
+    adminDeleteCorpusEntry
   };
 
   global.TrilinguoAPI = clientExport;

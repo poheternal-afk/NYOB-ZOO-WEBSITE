@@ -7,6 +7,9 @@ Supports English (en) <-> Vietnamese/Kinh (vi) <-> Hmong (hmn)
 ============================================================================
 """
 
+import csv
+import io
+import json
 import re
 from typing import Dict, Any, List, Optional
 
@@ -81,15 +84,65 @@ COMMON_PHRASES: List[Dict[str, str]] = [
     {"id": "p_cul_2", "category": "culture", "hmn": "Kuv puas kam thaij ib daim duab nrog koj?", "vi": "Tôi có thể chụp chung với bạn một bức ảnh được không?", "en": "May I take a photo together with you?", "phonetic": "koo poua ka thai ee dai doua nraw kaw", "pos": "nth", "note": "Respectful way for tourists to ask permission before taking photos."},
 ]
 
+# Dynamic Corpus learned from User Contributions + Admin Uploaded Documents
+DYNAMIC_CORPUS: List[Dict[str, str]] = []
+
 
 def normalize_text(text: str) -> str:
     clean = re.sub(r'[.,?!;:"""\'\'()\[\]]+', " ", (text or "").lower())
     return re.sub(r"\s+", " ", clean).strip()
 
 
+def get_active_corpus() -> List[Dict[str, str]]:
+    """
+    Combines dynamically learned entries (User Contributions + Admin Uploaded Documents)
+    with the core DICTIONARY and COMMON_PHRASES. Dynamic entries take priority.
+    """
+    return DYNAMIC_CORPUS + DICTIONARY + COMMON_PHRASES
+
+
+def sync_dynamic_corpus_from_db(db_session) -> List[Dict[str, str]]:
+    """
+    Loads all learned CorpusEntry rows from the database into DYNAMIC_CORPUS
+    so the 3-way translation engine immediately uses all community & admin knowledge.
+    """
+    global DYNAMIC_CORPUS
+    try:
+        from models import CorpusEntry
+
+        rows = db_session.query(CorpusEntry).order_by(CorpusEntry.updated_at.desc(), CorpusEntry.id.desc()).all()
+        loaded: List[Dict[str, str]] = []
+        for r in rows:
+            hmn_val = (r.hmn_text or "").strip()
+            vi_val = (r.vi_text or "").strip()
+            en_val = (r.en_text or "").strip()
+            if not hmn_val:
+                continue
+            loaded.append(
+                {
+                    "id": f"c_{r.id}",
+                    "hmn": hmn_val,
+                    "vi": vi_val or en_val or hmn_val,
+                    "en": en_val or vi_val or hmn_val,
+                    "phonetic": r.phonetic or generate_hmong_phonetics(hmn_val),
+                    "pos": "nth",
+                    "note": r.note
+                    or (
+                        f"Đóng góp từ cộng đồng ({r.source_name or 'Học viên'})"
+                        if r.source_type == "user_contribution"
+                        else f"Trích xuất từ tài liệu Admin ({r.source_name or 'Document'})"
+                    ),
+                }
+            )
+        DYNAMIC_CORPUS = loaded
+    except Exception:
+        pass
+    return DYNAMIC_CORPUS
+
+
 def generate_hmong_phonetics(hmn_text: str) -> str:
     norm = normalize_text(hmn_text)
-    for item in DICTIONARY + COMMON_PHRASES:
+    for item in DYNAMIC_CORPUS + DICTIONARY + COMMON_PHRASES:
         if normalize_text(item["hmn"]) == norm and item.get("phonetic"):
             return item["phonetic"]
 
@@ -97,7 +150,10 @@ def generate_hmong_phonetics(hmn_text: str) -> str:
     out: List[str] = []
     for w in words:
         cw = normalize_text(w)
-        matched = next((d["phonetic"] for d in DICTIONARY if normalize_text(d["hmn"]) == cw), None)
+        matched = next(
+            (d["phonetic"] for d in (DYNAMIC_CORPUS + DICTIONARY) if normalize_text(d["hmn"]) == cw and d.get("phonetic")),
+            None,
+        )
         if matched:
             out.append(matched)
         else:
@@ -126,7 +182,7 @@ def translate_text_3way(text: str, source_lang: str, target_lang: str) -> Dict[s
         }
 
     norm = normalize_text(raw)
-    all_entries = DICTIONARY + COMMON_PHRASES
+    all_entries = get_active_corpus()
 
     if source_lang == target_lang:
         return {
@@ -145,17 +201,20 @@ def translate_text_3way(text: str, source_lang: str, target_lang: str) -> Dict[s
     # 1. Exact match in source_lang
     for entry in all_entries:
         val = normalize_text(entry.get(source_lang, ""))
-        parts = [p.strip() for p in val.split("/")]
+        if not val:
+            continue
+        parts = [p.strip() for p in val.split("/") if p.strip()]
         if val == norm or norm in parts:
             pos_obj = POS_LABELS.get(entry.get("pos", "nth"), POS_LABELS["nth"])
+            out_val = entry.get(target_lang) or entry.get("vi") or entry.get("en") or raw
             return {
                 "source_text": raw,
-                "translated_text": entry.get(target_lang, raw),
+                "translated_text": out_val,
                 "source_lang": source_lang,
                 "target_lang": target_lang,
                 "hmn_text": entry["hmn"],
-                "vi_text": entry["vi"],
-                "en_text": entry["en"],
+                "vi_text": entry.get("vi") or out_val,
+                "en_text": entry.get("en") or out_val,
                 "phonetic": entry.get("phonetic") or generate_hmong_phonetics(entry["hmn"]),
                 "pos_code": pos_obj["code"],
                 "grammar_note": entry.get("note", ""),
@@ -164,19 +223,20 @@ def translate_text_3way(text: str, source_lang: str, target_lang: str) -> Dict[s
     # 2. Match across any language in corpus
     for entry in all_entries:
         if (
-            normalize_text(entry["hmn"]) == norm
-            or normalize_text(entry["vi"]) == norm
-            or normalize_text(entry["en"]) == norm
+            normalize_text(entry.get("hmn", "")) == norm
+            or normalize_text(entry.get("vi", "")) == norm
+            or normalize_text(entry.get("en", "")) == norm
         ):
             pos_obj = POS_LABELS.get(entry.get("pos", "nth"), POS_LABELS["nth"])
+            out_val = entry.get(target_lang) or entry.get("vi") or entry.get("en") or raw
             return {
                 "source_text": raw,
-                "translated_text": entry.get(target_lang, raw),
+                "translated_text": out_val,
                 "source_lang": source_lang,
                 "target_lang": target_lang,
                 "hmn_text": entry["hmn"],
-                "vi_text": entry["vi"],
-                "en_text": entry["en"],
+                "vi_text": entry.get("vi") or out_val,
+                "en_text": entry.get("en") or out_val,
                 "phonetic": entry.get("phonetic") or generate_hmong_phonetics(entry["hmn"]),
                 "pos_code": pos_obj["code"],
                 "grammar_note": entry.get("note", ""),
@@ -195,11 +255,13 @@ def translate_text_3way(text: str, source_lang: str, target_lang: str) -> Dict[s
     while i < len(words):
         matched_entry: Optional[Dict[str, str]] = None
         matched_len = 0
-        for length in range(min(4, len(words) - i), 0, -1):
+        for length in range(min(5, len(words) - i), 0, -1):
             chunk = normalize_text(" ".join(words[i : i + length]))
             for entry in sorted_entries:
                 val = normalize_text(entry.get(source_lang, ""))
-                parts = [p.strip() for p in val.split("/")]
+                if not val:
+                    continue
+                parts = [p.strip() for p in val.split("/") if p.strip()]
                 if val == chunk or chunk in parts:
                     matched_entry = entry
                     matched_len = length
@@ -208,11 +270,16 @@ def translate_text_3way(text: str, source_lang: str, target_lang: str) -> Dict[s
                 break
 
         if matched_entry:
-            out_words.append(matched_entry[target_lang].split("/")[0].strip())
-            hmn_words.append(matched_entry["hmn"].split("/")[0].strip())
-            vi_words.append(matched_entry["vi"].split("/")[0].strip())
-            en_words.append(matched_entry["en"].split("/")[0].strip())
-            notes.append(f"{matched_entry['hmn']} (/{matched_entry['phonetic']}/): {matched_entry['vi']} / {matched_entry['en']}")
+            t_val = (matched_entry.get(target_lang) or matched_entry.get("vi") or matched_entry.get("en") or "").split("/")[0].strip()
+            h_val = (matched_entry.get("hmn") or "").split("/")[0].strip()
+            v_val = (matched_entry.get("vi") or t_val).split("/")[0].strip()
+            e_val = (matched_entry.get("en") or t_val).split("/")[0].strip()
+            out_words.append(t_val)
+            hmn_words.append(h_val)
+            vi_words.append(v_val)
+            en_words.append(e_val)
+            phon = matched_entry.get("phonetic") or generate_hmong_phonetics(h_val)
+            notes.append(f"{h_val} (/{phon}/): {v_val} / {e_val}")
             i += matched_len
         else:
             out_words.append(words[i])
@@ -240,3 +307,91 @@ def translate_text_3way(text: str, source_lang: str, target_lang: str) -> Dict[s
         "pos_code": "(nth) nthe",
         "grammar_note": " · ".join(notes) if notes else "Cấu trúc câu tiếng Hmong theo trật tự Chủ ngữ - Động từ - Tân ngữ (SVO) tương tự tiếng Việt và tiếng Anh (PDF p.96).",
     }
+
+
+def parse_document_content_to_entries(filename: str, raw_content: str) -> List[Dict[str, str]]:
+    """
+    Intelligently parses an uploaded document (.csv, .tsv, .json, .txt, .md)
+    into normalized corpus entries: [{'hmn_text', 'vi_text', 'en_text', 'note'}].
+    Requires hmn_text and at least 1 of (vi_text, en_text).
+    """
+    content = (raw_content or "").strip()
+    if not content:
+        return []
+
+    ext = (filename or "").lower().rsplit(".", 1)[-1] if "." in (filename or "") else "txt"
+    extracted: List[Dict[str, str]] = []
+
+    # 1. JSON format
+    if ext == "json" or content.startswith("[") or content.startswith("{"):
+        try:
+            data = json.loads(content)
+            items = data if isinstance(data, list) else data.get("entries") or data.get("items") or [data]
+            if isinstance(items, list):
+                for obj in items:
+                    if not isinstance(obj, dict):
+                        continue
+                    hmn = str(obj.get("hmn_text") or obj.get("hmn") or obj.get("hmong") or "").strip()
+                    vi = str(obj.get("vi_text") or obj.get("vi") or obj.get("vietnamese") or obj.get("kinh") or "").strip()
+                    en = str(obj.get("en_text") or obj.get("en") or obj.get("english") or "").strip()
+                    note = str(obj.get("note") or obj.get("example") or "").strip()
+                    if hmn and (vi or en):
+                        extracted.append({"hmn_text": hmn, "vi_text": vi, "en_text": en, "note": note})
+                if extracted:
+                    return extracted
+        except Exception:
+            pass
+
+    # 2. CSV / TSV format
+    if ext in ("csv", "tsv") or ("\t" in content and "\n" in content):
+        try:
+            delimiter = "\t" if (ext == "tsv" or content.count("\t") > content.count(",")) else ","
+            reader = csv.reader(io.StringIO(content), delimiter=delimiter)
+            for idx, row in enumerate(reader):
+                cols = [c.strip() for c in row if c is not None]
+                if len(cols) < 2:
+                    continue
+                first_low = cols[0].lower()
+                if idx == 0 and first_low in ("hmn", "hmong", "hmn_text", "tiếng mông", "tiếng hmong", "tu_vung"):
+                    continue
+                hmn = cols[0]
+                vi = cols[1] if len(cols) > 1 else ""
+                en = cols[2] if len(cols) > 2 else ""
+                note = cols[3] if len(cols) > 3 else ""
+                if hmn and (vi or en):
+                    extracted.append({"hmn_text": hmn, "vi_text": vi, "en_text": en, "note": note})
+            if extracted:
+                return extracted
+        except Exception:
+            pass
+
+    # 3. Free-form Text / Markdown (.txt, .md) line-by-line parsing
+    for raw_line in content.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or line.startswith("//"):
+            continue
+        # Strip leading bullet or numbering like "1. " or "- "
+        line = re.sub(r"^(?:\d+[\.\)]\s*|[-*•]\s*)", "", line).strip()
+        if not line:
+            continue
+
+        parts: List[str] = []
+        for sep in ("|", "\t", ";", " — ", " - ", " = ", " : "):
+            if sep in line:
+                parts = [p.strip() for p in line.split(sep)]
+                break
+        if not parts and "," in line:
+            parts = [p.strip() for p in line.split(",")]
+
+        if len(parts) >= 2:
+            hmn = parts[0]
+            vi = parts[1] if len(parts) > 1 else ""
+            en = parts[2] if len(parts) > 2 else ""
+            note = parts[3] if len(parts) > 3 else ""
+            if hmn.lower() in ("hmn", "hmong", "tiếng mông", "tiếng hmong"):
+                continue
+            if hmn and (vi or en):
+                extracted.append({"hmn_text": hmn, "vi_text": vi, "en_text": en, "note": note})
+
+    return extracted
+

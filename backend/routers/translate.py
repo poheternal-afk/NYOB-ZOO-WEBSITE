@@ -17,7 +17,7 @@ from schemas import (
     HistoryItemResponse,
 )
 from dependencies import get_current_user, get_optional_user, make_block_key, ensure_learning_block
-from services.translator import translate_text_3way
+from services.translator import translate_text_3way, sync_dynamic_corpus_from_db
 
 router = APIRouter(prefix="/api/translate", tags=["Translator & History"])
 
@@ -28,6 +28,7 @@ def translate_endpoint(
     db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_user),
 ):
+    sync_dynamic_corpus_from_db(db)
     result = translate_text_3way(
         text=payload.text,
         source_lang=payload.source_lang,
@@ -83,7 +84,11 @@ def translate_endpoint(
 
 
 @router.post("/lookup")
-def lookup_selected_text_endpoint(payload: LookupSelectionRequest):
+def lookup_selected_text_endpoint(
+    payload: LookupSelectionRequest,
+    db: Session = Depends(get_db),
+):
+    sync_dynamic_corpus_from_db(db)
     result = translate_text_3way(
         text=payload.text,
         source_lang=payload.source_lang,

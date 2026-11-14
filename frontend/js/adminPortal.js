@@ -19,6 +19,18 @@
   let currentAdminTab = 'dashboard';
   let cachedDashboardStats = null;
   let cachedAdminUsers = [];
+  let cachedCorpusData = {
+    total: 0,
+    user_contribution_count: 0,
+    admin_document_count: 0,
+    entries: [],
+    document_logs: []
+  };
+  let corpusFilterState = {
+    search: '',
+    source: 'all'
+  };
+  let pendingUploadedDocs = [];
   let savedLearnerNavHTML = null;
   let filterState = {
     search: '',
@@ -32,6 +44,7 @@
       nav_dashboard: '📊 Tổng quan (Dashboard)',
       nav_users: '👥 Người dùng & Phân quyền',
       nav_progress: '📈 Tiến độ Học tập',
+      nav_corpus: '🧠 Huấn luyện & Nạp Tài liệu',
       nav_profile: '👑 Hồ sơ Admin',
       nav_logout: '🚪 Đăng xuất',
       portal_badge: 'HỆ THỐNG QUẢN TRỊ VIÊN · RBAC PORTAL',
@@ -59,6 +72,7 @@
       nav_dashboard: '📊 Overview (Dashboard)',
       nav_users: '👥 Users & Roles (RBAC)',
       nav_progress: '📈 Learning Progress',
+      nav_corpus: '🧠 Corpus & Document Training',
       nav_profile: '👑 Admin Profile',
       nav_logout: '🚪 Sign Out',
       portal_badge: 'ADMINISTRATOR PORTAL · RBAC CONTROL',
@@ -86,6 +100,7 @@
       nav_dashboard: '📊 Saib Tag Nrho (Dashboard)',
       nav_users: '👥 Tswj Tus Tswv & Quyền',
       nav_progress: '📈 Kev Kawm Lus',
+      nav_corpus: '🧠 Kawm Ntaub Ntawv (Corpus)',
       nav_profile: '👑 Hồ Sơ Admin',
       nav_logout: '🚪 Tawm (Logout)',
       portal_badge: 'KHOOM TSWJ HWM ADMIN · RBAC PORTAL',
@@ -226,6 +241,9 @@
       <a href="#admin-progress" class="nav-link ${currentAdminTab === 'progress' ? 'active' : ''}" data-admin-nav="progress" data-func-id="F-48" data-cmp-id="CMP-ADM-NAV-03">
         <span>${at('nav_progress')}</span>
       </a>
+      <a href="#admin-corpus" class="nav-link ${currentAdminTab === 'corpus' ? 'active' : ''}" data-admin-nav="corpus" data-func-id="F-50" data-cmp-id="CMP-ADM-NAV-05">
+        <span>${at('nav_corpus')}</span>
+      </a>
       <a href="#admin-profile" class="nav-link nav-account-pill ${currentAdminTab === 'profile' ? 'active' : ''}" data-admin-nav="profile" data-func-id="F-49" data-cmp-id="CMP-ADM-NAV-04">
         <span>${isSuper ? '👑' : '🛡️'}</span>
         <strong>${escapeHtml(user.accountName)}</strong>
@@ -273,12 +291,14 @@
    */
   async function loadAndRenderAdminPortal() {
     try {
-      const [stats, usersRes] = await Promise.all([
+      const [stats, usersRes, corpusRes] = await Promise.all([
         global.TrilinguoAPI.getAdminDashboardStats(),
-        global.TrilinguoAPI.getAdminUsers(filterState)
+        global.TrilinguoAPI.getAdminUsers(filterState),
+        global.TrilinguoAPI.getCorpusEntries(corpusFilterState.search, corpusFilterState.source)
       ]);
       cachedDashboardStats = stats;
       cachedAdminUsers = (usersRes && usersRes.items) || [];
+      cachedCorpusData = corpusRes || cachedCorpusData;
       renderAdminPortalDOM();
     } catch (err) {
       if (global.TrilinguoApp && global.TrilinguoApp.showToast) {
@@ -289,12 +309,14 @@
 
   async function refreshUsersListOnly() {
     try {
-      const [stats, usersRes] = await Promise.all([
+      const [stats, usersRes, corpusRes] = await Promise.all([
         global.TrilinguoAPI.getAdminDashboardStats(),
-        global.TrilinguoAPI.getAdminUsers(filterState)
+        global.TrilinguoAPI.getAdminUsers(filterState),
+        global.TrilinguoAPI.getCorpusEntries(corpusFilterState.search, corpusFilterState.source)
       ]);
       cachedDashboardStats = stats;
       cachedAdminUsers = (usersRes && usersRes.items) || [];
+      cachedCorpusData = corpusRes || cachedCorpusData;
       renderAdminPortalDOM();
     } catch (err) {
       if (global.TrilinguoApp && global.TrilinguoApp.showToast) {
@@ -354,6 +376,9 @@
           <button type="button" class="category-pill ${currentAdminTab === 'progress' ? 'active' : ''}" data-switch-admin-tab="progress">
             ${at('nav_progress')}
           </button>
+          <button type="button" class="category-pill ${currentAdminTab === 'corpus' ? 'active' : ''}" data-switch-admin-tab="corpus">
+            ${at('nav_corpus')} (${cachedCorpusData.total || 0})
+          </button>
           <button type="button" class="category-pill ${currentAdminTab === 'profile' ? 'active' : ''}" data-switch-admin-tab="profile">
             ${at('nav_profile')}
           </button>
@@ -375,7 +400,12 @@
         ${renderLearningProgressSectionHTML()}
       </div>
 
-      <!-- TAB 4: ADMIN PROFILE & SYSTEM SETTINGS -->
+      <!-- TAB 4: CORPUS & DOCUMENT UPLOAD TRAINING -->
+      <div class="admin-tab-pane ${currentAdminTab === 'corpus' ? 'is-active' : ''}" id="adminTabCorpus">
+        ${renderCorpusTrainingSectionHTML()}
+      </div>
+
+      <!-- TAB 5: ADMIN PROFILE & SYSTEM SETTINGS -->
       <div class="admin-tab-pane ${currentAdminTab === 'profile' ? 'is-active' : ''}" id="adminTabProfile">
         ${renderAdminProfileSectionHTML(user)}
       </div>
@@ -744,6 +774,206 @@
                 .join('')}
             </tbody>
           </table>
+        </div>
+      </div>
+    `;
+  }
+
+  /**
+   * AREA 3B: CORPUS & DOCUMENT UPLOAD TRAINING TAB (ADMIN / SUPER ADMIN)
+   */
+  function renderCorpusTrainingSectionHTML() {
+    const entries = cachedCorpusData.entries || [];
+    const logs = cachedCorpusData.document_logs || [];
+    const totalCount = cachedCorpusData.total ?? entries.length;
+    const userCount = cachedCorpusData.user_contribution_count ?? 0;
+    const docCount = cachedCorpusData.admin_document_count ?? 0;
+
+    return `
+      <div class="glass-panel" data-func-id="F-50" data-cmp-id="CMP-ADM-CORPUS">
+        <div class="section-header" style="flex-wrap:wrap;gap:1rem;">
+          <div>
+            <h2 class="section-title" style="font-size:1.45rem;">🧠 Trung Tâm Nạp Tài Liệu &amp; Huấn Luyện Từ Điển AI 3 Chiều</h2>
+            <p class="section-subtitle">
+              Tải lên file tài liệu (<code>.csv</code>, <code>.tsv</code>, <code>.txt</code>, <code>.json</code>, <code>.md</code>) hoặc nhập lô dữ liệu. Hệ thống Dịch thuật 3 chiều sẽ tự động học, gộp nghĩa bổ sung và cập nhật dần dần từ cả <strong>2 nguồn</strong>: <em>Đóng góp của Người học</em> và <em>Tài liệu của Admin</em>.
+            </p>
+          </div>
+          <div style="display:flex;gap:0.65rem;flex-wrap:wrap;">
+            <div style="background:rgba(15,118,110,0.1);border:1.5px solid rgba(15,118,110,0.28);border-radius:12px;padding:0.45rem 0.85rem;text-align:center;">
+              <div style="font-size:0.7rem;font-weight:800;color:#0F766E;">TỔNG TỪ ĐÃ HỌC</div>
+              <div style="font-size:1.25rem;font-weight:900;color:#0F766E;">${totalCount}</div>
+            </div>
+            <div style="background:rgba(217,119,6,0.1);border:1.5px solid rgba(217,119,6,0.28);border-radius:12px;padding:0.45rem 0.85rem;text-align:center;">
+              <div style="font-size:0.7rem;font-weight:800;color:#B45309;">🌱 NGƯỜI HỌC ĐÓNG GÓP</div>
+              <div style="font-size:1.25rem;font-weight:900;color:#B45309;">${userCount}</div>
+            </div>
+            <div style="background:rgba(37,99,235,0.1);border:1.5px solid rgba(37,99,235,0.28);border-radius:12px;padding:0.45rem 0.85rem;text-align:center;">
+              <div style="font-size:0.7rem;font-weight:800;color:#1D4ED8;">📄 TÀI LIỆU ADMIN</div>
+              <div style="font-size:1.25rem;font-weight:900;color:#1D4ED8;">${docCount}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2-COLUMN ADMIN CORPUS LAYOUT -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:1.35rem;align-items:start;margin-top:0.5rem;">
+          <!-- LEFT COLUMN: DOCUMENT FILE UPLOADER & BATCH TRAINER -->
+          <div style="background:var(--surface-muted);border:1.5px solid var(--border-subtle);border-radius:16px;padding:1.25rem;">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.75rem;">
+              <h3 style="margin:0;font-size:1.08rem;font-weight:900;color:var(--text-heading);">
+                📤 1. Upload File Tài Liệu Huấn Luyện Hệ Thống
+              </h3>
+              <button type="button" id="adminDownloadSampleDocBtn" class="btn-save-notebook" style="font-size:0.75rem;padding:0.3rem 0.7rem;">
+                📥 Tải File Mẫu (.csv)
+              </button>
+            </div>
+
+            <div style="font-size:0.82rem;color:var(--text-secondary);line-height:1.5;margin-bottom:0.85rem;">
+              Hỗ trợ tải lên một hoặc nhiều file <strong>.csv, .tsv, .txt, .json, .md</strong>. Mỗi dòng gồm <strong>Từ/Câu Tiếng Mông</strong> (bắt buộc) và <strong>tối thiểu 1 trong 2 bản dịch</strong> (Tiếng Việt hoặc Tiếng Anh), phân tách bằng dấu <code>,</code>, <code>|</code> hoặc <code>Tab</code>.
+            </div>
+
+            <label
+              for="adminCorpusFileInput"
+              style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:1.35rem 1rem;border:2px dashed rgba(15,118,110,0.45);border-radius:14px;background:rgba(15,118,110,0.05);cursor:pointer;text-align:center;transition:0.2s;"
+            >
+              <span style="font-size:2rem;margin-bottom:0.3rem;">📁</span>
+              <span style="font-weight:800;color:var(--color-main-dark-teal);">Bấm để chọn File Tài liệu (.csv, .txt, .tsv, .json, .md)</span>
+              <span style="font-size:0.76rem;color:var(--text-muted);margin-top:0.2rem;">Có thể chọn nhiều file tài liệu cùng lúc</span>
+              <input
+                type="file"
+                id="adminCorpusFileInput"
+                accept=".csv,.tsv,.txt,.json,.md"
+                multiple
+                style="display:none;"
+              />
+            </label>
+
+            <div id="adminCorpusFilePreview" style="margin-top:0.75rem;font-size:0.82rem;color:var(--text-secondary);"></div>
+
+            <div class="form-group" style="margin-top:0.9rem;">
+              <label class="form-label" for="adminCorpusBatchTextarea">
+                Hoặc dán trực tiếp nội dung tài liệu (Mỗi dòng: <code>Tiếng Mông | Tiếng Việt | Tiếng Anh</code>):
+              </label>
+              <textarea
+                id="adminCorpusBatchTextarea"
+                class="form-control"
+                rows="5"
+                placeholder="Nyob zoo kuv tsev neeg | Xin chào gia đình tôi | Hello my family&#10;Kuv xav mus Tả Van | Tôi muốn đi bản Tả Van | I want to go to Ta Van village&#10;Ua tsaug koj pab kuv | Cảm ơn bạn đã giúp tôi |"
+                style="font-family:monospace;font-size:0.83rem;"
+              ></textarea>
+            </div>
+
+            <div id="adminCorpusStatusMsg" class="is-hidden" style="margin-top:0.75rem;padding:0.75rem 0.9rem;border-radius:10px;font-size:0.84rem;font-weight:700;"></div>
+
+            <div style="display:flex;gap:0.65rem;flex-wrap:wrap;margin-top:0.9rem;">
+              <button type="button" id="adminTrainDocumentBtn" class="btn-tool btn-tool--flashcard" style="flex:1;justify-content:center;">
+                🚀 Nạp Tài Liệu &amp; Dạy Hệ Thống Ngay
+              </button>
+            </div>
+
+            <!-- Document Upload Logs -->
+            <div style="margin-top:1.25rem;padding-top:1rem;border-top:1px solid var(--border-subtle);">
+              <h4 style="margin:0 0 0.5rem;font-size:0.88rem;font-weight:900;color:var(--text-heading);">
+                🗂️ Lịch sử File Tài liệu Admin đã nạp (${logs.length} lần nạp)
+              </h4>
+              <div style="max-height:150px;overflow-y:auto;display:flex;flex-direction:column;gap:0.4rem;">
+                ${
+                  logs.length === 0
+                    ? `<div style="font-size:0.8rem;color:var(--text-muted);">Chưa có file tài liệu nào được tải lên.</div>`
+                    : logs
+                        .map(
+                          log => `
+                      <div style="font-size:0.78rem;background:var(--surface-card, rgba(255,255,255,0.75));padding:0.45rem 0.65rem;border-radius:8px;border:1px solid var(--border-subtle);display:flex;justify-content:space-between;gap:0.5rem;flex-wrap:wrap;">
+                        <span>📄 <strong>${escapeHtml(log.filename)}</strong></span>
+                        <span style="color:#0F766E;font-weight:800;">+${log.inserted_count} mới · 🔄 ${log.updated_count} cập nhật</span>
+                      </div>
+                    `
+                        )
+                        .join('')
+                }
+              </div>
+            </div>
+          </div>
+
+          <!-- RIGHT COLUMN: UNIFIED LEARNED KNOWLEDGE BASE (USER CONTRIBUTIONS + ADMIN DOCS) -->
+          <div style="background:var(--surface-muted);border:1.5px solid var(--border-subtle);border-radius:16px;padding:1.25rem;">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.75rem;">
+              <h3 style="margin:0;font-size:1.08rem;font-weight:900;color:var(--text-heading);">
+                📚 2. Kho Tri Thức Hệ Thống Đã Học (${entries.length} mục)
+              </h3>
+            </div>
+
+            <div style="display:flex;gap:0.55rem;flex-wrap:wrap;margin-bottom:0.85rem;">
+              <input
+                type="search"
+                id="adminCorpusSearchInput"
+                class="form-control"
+                style="flex:1;min-width:180px;"
+                placeholder="🔍 Tìm từ HMN / VI / EN hoặc tên tài liệu..."
+                value="${escapeHtml(corpusFilterState.search)}"
+              />
+              <select id="adminCorpusSourceSelect" class="form-control" style="width:auto;">
+                <option value="all" ${corpusFilterState.source === 'all' ? 'selected' : ''}>Tất cả nguồn (${totalCount})</option>
+                <option value="user_contribution" ${corpusFilterState.source === 'user_contribution' ? 'selected' : ''}>🌱 Người học đóng góp (${userCount})</option>
+                <option value="admin_document" ${corpusFilterState.source === 'admin_document' ? 'selected' : ''}>📄 Tài liệu Admin (${docCount})</option>
+              </select>
+            </div>
+
+            <div class="admin-table-responsive" style="max-height:460px;overflow-y:auto;">
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th>Tiếng Mông (HMN)</th>
+                    <th>Tiếng Việt (VI)</th>
+                    <th>Tiếng Anh (EN)</th>
+                    <th>Nguồn dữ liệu</th>
+                    <th>Độ chín</th>
+                    <th>Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${
+                    entries.length === 0
+                      ? `<tr><td colspan="6" style="text-align:center;padding:1.5rem;color:var(--text-muted);">Chưa có mục từ vựng nào trong Kho Tri Thức Đã Học. Hãy tải lên file tài liệu ở cột bên trái!</td></tr>`
+                      : entries
+                          .map(item => {
+                            const isDoc = item.source_type === 'admin_document';
+                            return `
+                          <tr>
+                            <td>
+                              <strong style="color:var(--color-main-orange);">${escapeHtml(item.hmn_text)}</strong>
+                              <div style="font-size:0.72rem;color:var(--text-muted);">/${escapeHtml(item.phonetic || '')}/</div>
+                            </td>
+                            <td>${item.vi_text ? escapeHtml(item.vi_text) : '<em style="opacity:0.55;">—</em>'}</td>
+                            <td>${item.en_text ? escapeHtml(item.en_text) : '<em style="opacity:0.55;">—</em>'}</td>
+                            <td>
+                              <span style="display:inline-block;padding:0.18rem 0.55rem;border-radius:999px;font-size:0.72rem;font-weight:800;background:${isDoc ? '#DBEAFE' : '#ECFDF5'};color:${isDoc ? '#1D4ED8' : '#047857'};">
+                                ${isDoc ? '📄 Tài liệu' : '🌱 Người học'}
+                              </span>
+                              <div style="font-size:0.72rem;color:var(--text-muted);margin-top:0.15rem;">${escapeHtml(item.source_name || '')}</div>
+                            </td>
+                            <td>
+                              <span class="mastery-pill is-mastered">🔄 v${item.revision_count || 1}</span>
+                            </td>
+                            <td>
+                              <button
+                                type="button"
+                                class="btn-tool btn-tool--outline"
+                                data-delete-corpus-id="${item.id}"
+                                style="padding:0.28rem 0.6rem;font-size:0.74rem;border-color:#d94848;color:#d94848;"
+                                title="Xóa mục này khỏi bộ nhớ đã học"
+                              >
+                                🗑️ Xóa
+                              </button>
+                            </td>
+                          </tr>
+                        `;
+                          })
+                          .join('')
+                  }
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </div>
     `;
@@ -1287,6 +1517,204 @@
         window.location.href = 'index.html';
       });
     }
+
+    // ------------------------------------------------------------------
+    // CORPUS & DOCUMENT UPLOAD TRAINING TAB EVENTS (ADMIN / SUPER ADMIN)
+    // ------------------------------------------------------------------
+    const sampleDocBtn = document.getElementById('adminDownloadSampleDocBtn');
+    if (sampleDocBtn) {
+      sampleDocBtn.addEventListener('click', () => {
+        const csvSample = [
+          'hmn,vi,en,note',
+          '"Nyob zoo kuv tsev neeg","Xin chào gia đình của tôi","Hello my family","Câu chào hỏi thân mật tại bản Tả Van"',
+          '"Kuv xav kawm lus Hmoob","Tôi muốn học tiếng Mông","I want to learn Hmong","Giao tiếp du lịch cộng đồng"',
+          '"Ua tsaug koj pab kuv","Cảm ơn bạn đã giúp đỡ tôi","Thank you for helping me","Lời cảm ơn lịch sự"',
+          '"Tả Van zoo nkauj heev","Bản Tả Van đẹp lắm","Ta Van village is very beautiful","Khen phong cảnh bản làng"',
+          '"Dej ntshiab thiab txias","Nước suối trong và mát","Clear and cool stream water","Miêu tả thiên nhiên"'
+        ].join('\n');
+        const blob = new Blob(['\uFEFF' + csvSample], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'tai_lieu_huan_luyen_hmong_trilinguo_mau.csv';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      });
+    }
+
+    const fileInput = document.getElementById('adminCorpusFileInput');
+    const filePreview = document.getElementById('adminCorpusFilePreview');
+    if (fileInput) {
+      fileInput.addEventListener('change', async () => {
+        const files = Array.from(fileInput.files || []);
+        pendingUploadedDocs = [];
+        if (!files.length) {
+          if (filePreview) filePreview.innerHTML = '';
+          return;
+        }
+        let totalPreviewCount = 0;
+        for (const f of files) {
+          const text = await f.text();
+          const parsed = global.TrilinguoAPI.parseDocumentContentInBrowser(f.name, text);
+          totalPreviewCount += parsed.length;
+          pendingUploadedDocs.push({
+            filename: f.name,
+            content: text,
+            entries: parsed
+          });
+        }
+        if (filePreview) {
+          filePreview.innerHTML = `
+            <div style="background:rgba(15,118,110,0.08);border:1px solid rgba(15,118,110,0.3);border-radius:10px;padding:0.6rem 0.85rem;color:#0F766E;font-weight:700;">
+              ✅ Đã đọc <strong>${files.length} file</strong> (${files.map(f => escapeHtml(f.name)).join(', ')}) — Trích xuất được <strong>${totalPreviewCount} mục từ/câu hợp lệ</strong> sẵn sàng huấn luyện!
+            </div>
+          `;
+        }
+      });
+    }
+
+    const trainBtn = document.getElementById('adminTrainDocumentBtn');
+    const batchTextarea = document.getElementById('adminCorpusBatchTextarea');
+    const corpusStatusMsg = document.getElementById('adminCorpusStatusMsg');
+    if (trainBtn) {
+      trainBtn.addEventListener('click', async () => {
+        const pastedText = batchTextarea ? (batchTextarea.value || '').trim() : '';
+        if (!pendingUploadedDocs.length && !pastedText) {
+          if (corpusStatusMsg) {
+            corpusStatusMsg.classList.remove('is-hidden');
+            corpusStatusMsg.style.background = 'rgba(220,38,38,0.12)';
+            corpusStatusMsg.style.color = '#B91C1C';
+            corpusStatusMsg.innerHTML = '⚠️ Vui lòng chọn ít nhất 1 file tài liệu (.csv, .txt, .tsv, .json, .md) hoặc dán nội dung vào ô văn bản!';
+          }
+          return;
+        }
+
+        trainBtn.disabled = true;
+        trainBtn.textContent = '⏳ Đang huấn luyện & cập nhật hệ thống...';
+
+        try {
+          let totalInserted = 0;
+          let totalUpdated = 0;
+          let activeTotal = 0;
+
+          for (const doc of pendingUploadedDocs) {
+            const res = await global.TrilinguoAPI.adminUploadCorpusDocument({
+              filename: doc.filename,
+              content: doc.content,
+              entries: doc.entries
+            });
+            totalInserted += res.inserted_count || 0;
+            totalUpdated += res.updated_count || 0;
+            activeTotal = res.total_corpus_size || activeTotal;
+          }
+
+          if (pastedText) {
+            const parsedPasted = global.TrilinguoAPI.parseDocumentContentInBrowser('Admin_Batch_Input.txt', pastedText);
+            const res = await global.TrilinguoAPI.adminUploadCorpusDocument({
+              filename: 'Admin_Batch_Input.txt',
+              content: pastedText,
+              entries: parsedPasted
+            });
+            totalInserted += res.inserted_count || 0;
+            totalUpdated += res.updated_count || 0;
+            activeTotal = res.total_corpus_size || activeTotal;
+          }
+
+          pendingUploadedDocs = [];
+          if (fileInput) fileInput.value = '';
+          if (batchTextarea) batchTextarea.value = '';
+
+          cachedCorpusData = await global.TrilinguoAPI.getCorpusEntries(
+            corpusFilterState.search,
+            corpusFilterState.source
+          );
+          renderAdminPortalDOM();
+
+          const newStatusEl = document.getElementById('adminCorpusStatusMsg');
+          if (newStatusEl) {
+            newStatusEl.classList.remove('is-hidden');
+            newStatusEl.style.background = 'rgba(5,150,105,0.12)';
+            newStatusEl.style.color = '#065F46';
+            newStatusEl.innerHTML = `🎉 Đã nạp tài liệu & huấn luyện hệ thống thành công: <strong>+${totalInserted} từ/câu mới</strong>, <strong>cập nhật/làm giàu ${totalUpdated} mục</strong> (Tổng bộ nhớ đã học: <strong>${cachedCorpusData.total || activeTotal} mục</strong>)!`;
+          }
+
+          if (global.TrilinguoApp && global.TrilinguoApp.showToast) {
+            global.TrilinguoApp.showToast(
+              `Đã huấn luyện thành công (+${totalInserted} mới, cập nhật ${totalUpdated} mục)!`,
+              'success'
+            );
+          }
+        } catch (err) {
+          if (corpusStatusMsg) {
+            corpusStatusMsg.classList.remove('is-hidden');
+            corpusStatusMsg.style.background = 'rgba(220,38,38,0.12)';
+            corpusStatusMsg.style.color = '#B91C1C';
+            corpusStatusMsg.innerHTML = `⚠️ ${escapeHtml(err.message)}`;
+          }
+          if (global.TrilinguoApp && global.TrilinguoApp.showToast) {
+            global.TrilinguoApp.showToast(err.message, 'error');
+          }
+        } finally {
+          trainBtn.disabled = false;
+          trainBtn.textContent = '🚀 Nạp Tài Liệu & Dạy Hệ Thống Ngay';
+        }
+      });
+    }
+
+    const corpusSearchInput = document.getElementById('adminCorpusSearchInput');
+    const corpusSourceSelect = document.getElementById('adminCorpusSourceSelect');
+    if (corpusSearchInput) {
+      corpusSearchInput.addEventListener('input', async () => {
+        corpusFilterState.search = corpusSearchInput.value;
+        cachedCorpusData = await global.TrilinguoAPI.getCorpusEntries(
+          corpusFilterState.search,
+          corpusFilterState.source
+        );
+        renderAdminPortalDOM();
+        const reFocus = document.getElementById('adminCorpusSearchInput');
+        if (reFocus) {
+          reFocus.focus();
+          reFocus.setSelectionRange(reFocus.value.length, reFocus.value.length);
+        }
+      });
+    }
+
+    if (corpusSourceSelect) {
+      corpusSourceSelect.addEventListener('change', async () => {
+        corpusFilterState.source = corpusSourceSelect.value;
+        cachedCorpusData = await global.TrilinguoAPI.getCorpusEntries(
+          corpusFilterState.search,
+          corpusFilterState.source
+        );
+        renderAdminPortalDOM();
+      });
+    }
+
+    root.querySelectorAll('[data-delete-corpus-id]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const entryId = Number(btn.getAttribute('data-delete-corpus-id'));
+        if (!window.confirm('Bạn có chắc chắn muốn xóa mục từ vựng này khỏi bộ nhớ đã học của hệ thống?')) {
+          return;
+        }
+        try {
+          await global.TrilinguoAPI.adminDeleteCorpusEntry(entryId);
+          cachedCorpusData = await global.TrilinguoAPI.getCorpusEntries(
+            corpusFilterState.search,
+            corpusFilterState.source
+          );
+          renderAdminPortalDOM();
+          if (global.TrilinguoApp && global.TrilinguoApp.showToast) {
+            global.TrilinguoApp.showToast('Đã xóa mục khỏi Kho Tri Thức Đã Học.', 'info');
+          }
+        } catch (err) {
+          if (global.TrilinguoApp && global.TrilinguoApp.showToast) {
+            global.TrilinguoApp.showToast(err.message, 'error');
+          }
+        }
+      });
+    });
   }
 
   // Automatically listen for Auth or Language changes

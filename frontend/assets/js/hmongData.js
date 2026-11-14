@@ -740,6 +740,70 @@
     };
   }
 
+  /**
+   * 10. INCREMENTAL CORPUS SYNCHRONIZATION (User Contributions + Admin Uploaded Documents)
+   * Merges learned entries directly into DICTIONARY so all 3-way translation,
+   * smart selection popover, and phrase matching immediately use new knowledge.
+   */
+  function registerLearnedEntries(entries) {
+    if (!Array.isArray(entries)) return;
+    entries.forEach(item => {
+      const hmn = String(item.hmn_text || item.hmn || '').trim();
+      const vi = String(item.vi_text || item.vi || '').trim();
+      const en = String(item.en_text || item.en || '').trim();
+      if (!hmn || (!vi && !en)) return;
+
+      const normHmn = normalizeText(hmn);
+      const existing = DICTIONARY.find(d => normalizeText(d.hmn) === normHmn);
+      const finalVi = vi || en || hmn;
+      const finalEn = en || vi || hmn;
+      const phon = item.phonetic || generateHmongPhonetics(hmn);
+      const noteText =
+        item.note ||
+        (item.source_type === 'admin_document'
+          ? `Trích xuất từ tài liệu Admin (${item.source_name || 'Document'})`
+          : `Đóng góp từ cộng đồng (${item.source_name || 'Học viên'})`);
+
+      if (existing) {
+        if (vi && !normalizeText(existing.vi).includes(normalizeText(vi))) {
+          existing.vi = existing.vi ? `${existing.vi} / ${vi}` : vi;
+        }
+        if (en && !normalizeText(existing.en).includes(normalizeText(en))) {
+          existing.en = existing.en ? `${existing.en} / ${en}` : en;
+        }
+        if (noteText && !String(existing.note || '').includes(noteText)) {
+          existing.note = existing.note ? `${existing.note} · ${noteText}` : noteText;
+        }
+      } else {
+        DICTIONARY.unshift({
+          id: `c_${item.id || Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          hmn,
+          vi: finalVi,
+          en: finalEn,
+          phonetic: phon,
+          pos: 'nth',
+          note: noteText,
+          exampleHmn: hmn,
+          exampleVi: finalVi,
+          exampleEn: finalEn
+        });
+      }
+    });
+  }
+
+  // Hydrate any locally cached learned corpus entries immediately on startup
+  try {
+    const rawCached = localStorage.getItem('trilinguo_local_corpus_v1');
+    if (rawCached) {
+      const parsed = JSON.parse(rawCached);
+      if (Array.isArray(parsed)) {
+        registerLearnedEntries(parsed);
+      }
+    }
+  } catch (e) {
+    // Ignore storage parse error
+  }
+
   // Export globally
   global.TrilinguoData = {
     HMONG_TONES,
@@ -750,6 +814,7 @@
     analyzeHmongTone,
     generateHmongPhonetics,
     lookupSelection,
-    translateText
+    translateText,
+    registerLearnedEntries
   };
 })(window);

@@ -139,3 +139,47 @@ class NotebookItem(Base):
     created_at = Column(DateTime(timezone=True), default=utc_now)
 
     user = relationship("User", back_populates="notebook_items")
+
+
+class CorpusEntry(Base):
+    """
+    Stores learned Hmong-Vietnamese-English words, phrases, and sentences contributed by:
+    1. Learners ('user_contribution') via the Community Contribution tab.
+    2. Admins/Super Admins ('admin_document') via Document Upload & Batch Training.
+    Automatically feeds into the 3-way Translation & Smart Selection Engine.
+    """
+    __tablename__ = "corpus_entries"
+
+    id = Column(Integer, primary_key=True, index=True)
+    hmn_text = Column(Text, nullable=False)
+    vi_text = Column(Text, nullable=True)
+    en_text = Column(Text, nullable=True)
+    phonetic = Column(String(255), nullable=True)
+    pos_code = Column(String(60), nullable=True, default="(nth) nthe")
+    note = Column(Text, nullable=True)
+
+    # 'user_contribution' | 'admin_document'
+    source_type = Column(String(40), nullable=False, default="user_contribution", index=True)
+    source_name = Column(String(255), nullable=True)
+    contributor_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    revision_count = Column(Integer, nullable=False, default=1)
+
+    created_at = Column(DateTime(timezone=True), default=utc_now)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+
+class CorpusDocumentLog(Base):
+    """
+    Tracks documents uploaded by Admins to train and expand the system corpus.
+    """
+    __tablename__ = "corpus_document_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    filename = Column(String(255), nullable=False)
+    file_format = Column(String(30), nullable=False, default="txt")
+    total_lines = Column(Integer, nullable=False, default=0)
+    learned_count = Column(Integer, nullable=False, default=0)
+    updated_count = Column(Integer, nullable=False, default=0)
+    uploaded_by_email = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utc_now)
+

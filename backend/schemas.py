@@ -180,3 +180,45 @@ class AdminUserUpdateRequest(BaseModel):
 
 class AdminRoleUpdateRequest(BaseModel):
     role: str = Field(..., pattern="^(user|admin|super_admin)$")
+
+
+# --- COMMUNITY CONTRIBUTION & ADMIN CORPUS TRAINING SCHEMAS ---
+
+class UserContributionCreateRequest(BaseModel):
+    hmn_text: str = Field(..., min_length=1, max_length=500, description="Từ hoặc câu tiếng Hmong (Bắt buộc)")
+    vi_text: Optional[str] = Field(default="", max_length=500, description="Bản dịch sang Tiếng Việt")
+    en_text: Optional[str] = Field(default="", max_length=500, description="Bản dịch sang Tiếng Anh")
+    note: Optional[str] = Field(default="", max_length=500, description="Ghi chú ngữ cảnh hoặc ví dụ")
+
+
+class CorpusBatchItemInput(BaseModel):
+    hmn_text: str = Field(..., min_length=1, max_length=500)
+    vi_text: Optional[str] = Field(default="", max_length=500)
+    en_text: Optional[str] = Field(default="", max_length=500)
+    note: Optional[str] = Field(default="", max_length=500)
+
+
+class AdminDocumentUploadRequest(BaseModel):
+    filename: str = Field(..., min_length=1, max_length=255)
+    content: Optional[str] = Field(default="")
+    entries: Optional[List[CorpusBatchItemInput]] = Field(default=None)
+
+
+class CorpusEntryResponse(BaseModel):
+    id: int
+    hmn_text: str
+    vi_text: Optional[str] = ""
+    en_text: Optional[str] = ""
+    phonetic: Optional[str] = ""
+    pos_code: Optional[str] = "(nth) nthe"
+    note: Optional[str] = ""
+    source_type: str = "user_contribution"
+    source_name: Optional[str] = ""
+    contributor_id: Optional[int] = None
+    revision_count: int = 1
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+

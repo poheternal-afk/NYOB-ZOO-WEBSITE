@@ -20,7 +20,7 @@
       "dest": "/frontend/index.html"
     },
     {
-      "src": "/(index|phrase|vocabulary|quiz|profile)\\.html",
+      "src": "/(index|phrase|vocabulary|quiz|profile|contribute)\\.html",
       "dest": "/frontend/$1.html"
     },
     {

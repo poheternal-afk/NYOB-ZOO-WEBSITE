@@ -1377,11 +1377,243 @@
     }
   }
 
+  /**
+   * 12B. COMMUNITY CONTRIBUTION PAGE CONTROLLER (contribute.html)
+   */
+  let currentContribFilter = 'all';
+
+  function initContributePage() {
+    const form = document.getElementById('userContributeForm');
+    if (!form) return;
+
+    const hmnInput = document.getElementById('contribHmnInput');
+    const viInput = document.getElementById('contribViInput');
+    const enInput = document.getElementById('contribEnInput');
+    const noteInput = document.getElementById('contribNoteInput');
+    const statusBox = document.getElementById('contribStatusBox');
+    const resetBtn = document.getElementById('contribResetBtn');
+    const searchInput = document.getElementById('contribSearchInput');
+
+    function showContribStatus(html, isError) {
+      if (!statusBox) return;
+      statusBox.classList.remove('is-hidden');
+      statusBox.style.background = isError ? 'rgba(220,38,38,0.12)' : 'rgba(5,150,105,0.12)';
+      statusBox.style.border = isError ? '1.5px solid rgba(220,38,38,0.4)' : '1.5px solid rgba(5,150,105,0.4)';
+      statusBox.style.color = isError ? '#B91C1C' : '#065F46';
+      statusBox.innerHTML = html;
+    }
+
+    form.addEventListener('submit', async e => {
+      e.preventDefault();
+      const hmn = (hmnInput.value || '').trim();
+      const vi = (viInput.value || '').trim();
+      const en = (enInput.value || '').trim();
+      const note = (noteInput.value || '').trim();
+
+      if (!hmn) {
+        showContribStatus('⚠️ Vui lòng nhập <strong>Từ / Câu Tiếng Mông (Lus Hmoob)</strong> ở trường số 1!', true);
+        hmnInput.focus();
+        return;
+      }
+
+      if (!vi && !en) {
+        showContribStatus(
+          '⚠️ Bạn <strong>không được để trống cả 2 trường bản dịch</strong>! Vui lòng điền tối thiểu 1 bản dịch (Tiếng Việt hoặc Tiếng Anh).',
+          true
+        );
+        viInput.focus();
+        return;
+      }
+
+      try {
+        const res = await global.TrilinguoAPI.submitUserContribution({
+          hmn_text: hmn,
+          vi_text: vi,
+          en_text: en,
+          note
+        });
+
+        const entry = res.entry || {};
+        showContribStatus(
+          `✅ <strong>${res.message || 'Đã đóng góp và dạy hệ thống thành công!'}</strong><br/>` +
+            `<span style="font-size:0.82rem;opacity:0.9;">Từ vựng: <strong>${entry.hmn_text || hmn}</strong> → VI: <em>${entry.vi_text || '—'}</em> · EN: <em>${entry.en_text || '—'}</em> (Cập nhật lần #${entry.revision_count || 1})</span>`,
+          false
+        );
+
+        showToast(res.message || 'Đã đóng góp từ vựng & cập nhật hệ thống!', 'success');
+        hmnInput.value = '';
+        viInput.value = '';
+        enInput.value = '';
+        noteInput.value = '';
+        await renderContributeFeed();
+      } catch (err) {
+        showContribStatus(`⚠️ ${err.message}`, true);
+        showToast(err.message, 'error');
+      }
+    });
+
+    if (resetBtn) {
+      resetBtn.addEventListener('click', () => {
+        hmnInput.value = '';
+        viInput.value = '';
+        enInput.value = '';
+        noteInput.value = '';
+        if (statusBox) statusBox.classList.add('is-hidden');
+      });
+    }
+
+    if (searchInput) {
+      searchInput.addEventListener('input', () => renderContributeFeed());
+    }
+
+    document.querySelectorAll('[data-contrib-filter]').forEach(chip => {
+      chip.addEventListener('click', () => {
+        document.querySelectorAll('[data-contrib-filter]').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        currentContribFilter = chip.getAttribute('data-contrib-filter') || 'all';
+        renderContributeFeed();
+      });
+    });
+
+    renderContributeFeed();
+  }
+
+  async function renderContributeFeed() {
+    const feedList = document.getElementById('contribFeedList');
+    if (!feedList) return;
+
+    const searchInput = document.getElementById('contribSearchInput');
+    const q = searchInput ? (searchInput.value || '').trim() : '';
+
+    try {
+      const data = await global.TrilinguoAPI.getCorpusEntries(q, currentContribFilter);
+      const entries = data.entries || [];
+
+      const statTotal = document.getElementById('contribStatTotal');
+      const statUser = document.getElementById('contribStatUser');
+      const statAdmin = document.getElementById('contribStatAdmin');
+      if (statTotal) statTotal.textContent = data.total ?? entries.length;
+      if (statUser) statUser.textContent = data.user_contribution_count ?? 0;
+      if (statAdmin) statAdmin.textContent = data.admin_document_count ?? 0;
+
+      if (!entries.length) {
+        feedList.innerHTML = `
+          <div style="text-align:center;padding:2.2rem 1rem;border:1.5px dashed rgba(15,118,110,0.3);border-radius:14px;color:var(--text-secondary);">
+            <div style="font-size:2rem;margin-bottom:0.4rem;">🌱</div>
+            <div style="font-weight:800;color:var(--text-primary);">Chưa có dữ liệu đóng góp phù hợp bộ lọc</div>
+            <div style="font-size:0.84rem;margin-top:0.25rem;">Hãy nhập từ/câu Tiếng Mông đầu tiên ở biểu mẫu bên trái để dạy hệ thống!</div>
+          </div>
+        `;
+        return;
+      }
+
+      feedList.innerHTML = entries
+        .map(item => {
+          const isDoc = item.source_type === 'admin_document';
+          const badgeBg = isDoc ? '#DBEAFE' : '#ECFDF5';
+          const badgeColor = isDoc ? '#1D4ED8' : '#047857';
+          const badgeLabel = isDoc ? `📄 Tài liệu: ${item.source_name || 'Admin Corpus'}` : `🌱 Người học: ${item.source_name || 'Cộng đồng'}`;
+          const safeHmn = (item.hmn_text || '').replace(/"/g, '&quot;');
+          const safeVi = (item.vi_text || '').replace(/"/g, '&quot;');
+          const safeEn = (item.en_text || '').replace(/"/g, '&quot;');
+
+          return `
+            <div style="background:var(--surface-card, rgba(255,255,255,0.85));border:1.5px solid rgba(15,118,110,0.2);border-radius:14px;padding:0.9rem 1rem;">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.45rem;">
+                <span style="background:${badgeBg};color:${badgeColor};padding:0.18rem 0.65rem;border-radius:999px;font-size:0.72rem;font-weight:800;">
+                  ${badgeLabel}
+                </span>
+                <span style="font-size:0.73rem;font-weight:800;color:var(--text-muted);">
+                  🔄 Đã học/cập nhật ${item.revision_count || 1} lần · 🔊 /${item.phonetic || ''}/
+                </span>
+              </div>
+
+              <div style="font-size:1.05rem;font-weight:900;color:var(--color-main-orange);margin-bottom:0.35rem;">
+                HMN: ${item.hmn_text}
+              </div>
+
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:0.45rem;font-size:0.86rem;">
+                <div style="background:rgba(15,118,110,0.06);padding:0.4rem 0.65rem;border-radius:8px;">
+                  <strong style="color:#0F766E;">🇻🇳 Tiếng Việt:</strong> ${item.vi_text ? item.vi_text : '<em style="opacity:0.6;">(Chưa có — chờ đóng góp thêm)</em>'}
+                </div>
+                <div style="background:rgba(37,99,235,0.06);padding:0.4rem 0.65rem;border-radius:8px;">
+                  <strong style="color:#1D4ED8;">🇬🇧 Tiếng Anh:</strong> ${item.en_text ? item.en_text : '<em style="opacity:0.6;">(Chưa có — chờ đóng góp thêm)</em>'}
+                </div>
+              </div>
+
+              ${item.note ? `<div style="margin-top:0.4rem;font-size:0.79rem;color:var(--text-secondary);">💡 Ghi chú: ${item.note}</div>` : ''}
+
+              <div style="display:flex;align-items:center;justify-content:flex-end;gap:0.5rem;margin-top:0.6rem;">
+                <button type="button" class="btn-chip" data-contrib-speak="${safeHmn}" style="font-size:0.76rem;padding:0.25rem 0.65rem;">
+                  🔊 Nghe phát âm
+                </button>
+                <button
+                  type="button"
+                  class="btn-chip"
+                  data-contrib-save-hmn="${safeHmn}"
+                  data-contrib-save-vi="${safeVi}"
+                  data-contrib-save-en="${safeEn}"
+                  data-contrib-save-ph="${(item.phonetic || '').replace(/"/g, '&quot;')}"
+                  style="font-size:0.76rem;padding:0.25rem 0.65rem;"
+                >
+                  ＋ Lưu vào Sổ tay
+                </button>
+              </div>
+            </div>
+          `;
+        })
+        .join('');
+
+      feedList.querySelectorAll('[data-contrib-speak]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          speakText(btn.getAttribute('data-contrib-speak'), 'hmn');
+        });
+      });
+
+      feedList.querySelectorAll('[data-contrib-save-hmn]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!global.TrilinguoAPI.isLoggedIn()) {
+            openAuthModal();
+            return;
+          }
+          const hmn = btn.getAttribute('data-contrib-save-hmn') || '';
+          const vi = btn.getAttribute('data-contrib-save-vi') || hmn;
+          const en = btn.getAttribute('data-contrib-save-en') || vi;
+          const ph = btn.getAttribute('data-contrib-save-ph') || '';
+          const block = global.TrilinguoAPI.getActiveBlock();
+          const sourceText = block.nativeLang === 'en' ? (en || vi) : (vi || en);
+          try {
+            const res = await global.TrilinguoAPI.saveWordToNotebook({
+              sourceText,
+              targetText: hmn,
+              hmnText: hmn,
+              viText: vi || en,
+              enText: en || vi,
+              phonetic: ph,
+              posCode: '(nth) nthe',
+              posLabel: 'Từ đóng góp cộng đồng',
+              exampleSentence: hmn
+            });
+            showToast(
+              res.duplicated ? 'Từ này đã có trong Sổ tay cá nhân!' : 'Đã lưu từ đóng góp vào Sổ tay cá nhân!',
+              'success'
+            );
+          } catch (err) {
+            showToast(err.message, 'error');
+          }
+        });
+      });
+    } catch (err) {
+      console.warn('Contribute feed render warning:', err.message);
+    }
+  }
+
   async function refreshActivePageData() {
     await renderTranslationHistorySection();
     await renderPhraseCards();
     await renderNotebookCards();
     await renderProfileAndMetrics();
+    await renderContributeFeed();
   }
 
   /**
@@ -1425,11 +1657,19 @@
     global.TrilinguoI18n.applyTranslations();
     renderHeaderState();
 
+    // Sync learned corpus (User Contributions + Admin Uploaded Documents) into live translation dictionary
+    try {
+      await global.TrilinguoAPI.getCorpusEntries();
+    } catch (e) {
+      console.warn('Corpus sync notice:', e.message);
+    }
+
     initTranslatorPage();
     initPhrasesPage();
     initNotebookPage();
     initQuizPage();
     initProfilePage();
+    initContributePage();
   }
 
   document.addEventListener('DOMContentLoaded', initApp);
