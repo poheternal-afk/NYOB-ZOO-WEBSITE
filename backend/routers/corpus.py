@@ -23,7 +23,11 @@ from dependencies import get_optional_user, get_current_admin
 from services.translator import (
     normalize_text,
     generate_hmong_phonetics,
+    infer_pos_code,
+    infer_phrase_category,
+    auto_complete_missing_translation,
     sync_dynamic_corpus_from_db,
+    extract_text_from_binary_document,
     parse_document_content_to_entries,
 )
 
@@ -31,13 +35,17 @@ router = APIRouter(prefix="/api/corpus", tags=["Community Contribution & Admin C
 
 
 def serialize_corpus_entry(entry: CorpusEntry) -> dict:
+    hmn = entry.hmn_text or ""
+    vi = entry.vi_text or ""
+    en = entry.en_text or ""
     return {
         "id": entry.id,
-        "hmn_text": entry.hmn_text,
-        "vi_text": entry.vi_text or "",
-        "en_text": entry.en_text or "",
-        "phonetic": entry.phonetic or generate_hmong_phonetics(entry.hmn_text),
-        "pos_code": entry.pos_code or "(nth) nthe",
+        "hmn_text": hmn,
+        "vi_text": vi,
+        "en_text": en,
+        "phonetic": entry.phonetic or generate_hmong_phonetics(hmn),
+        "pos_code": entry.pos_code or infer_pos_code(hmn, vi, en),
+        "category": infer_phrase_category(hmn, vi, en),
         "note": entry.note or "",
         "source_type": entry.source_type or "user_contribution",
         "source_name": entry.source_name or "Học viên Trilinguo",
@@ -80,9 +88,11 @@ def upsert_and_enrich_corpus_entry(
       Returns (entry, True) indicating a new entry learned.
     """
     clean_hmn = (hmn_text or "").strip()
-    clean_vi = (vi_text or "").strip()
-    clean_en = (en_text or "").strip()
+    raw_vi = (vi_text or "").strip()
+    raw_en = (en_text or "").strip()
+    clean_vi, clean_en = auto_complete_missing_translation(clean_hmn, raw_vi, raw_en)
     clean_note = (note or "").strip()
+    inferred_pos = infer_pos_code(clean_hmn, clean_vi, clean_en)
     norm_target = normalize_text(clean_hmn)
 
     existing_rows = db.query(CorpusEntry).all()
@@ -94,10 +104,16 @@ def upsert_and_enrich_corpus_entry(
     if matched:
         matched.vi_text = _merge_translation_text(matched.vi_text, clean_vi)
         matched.en_text = _merge_translation_text(matched.en_text, clean_en)
+        if not matched.vi_text or not matched.en_text:
+            matched.vi_text, matched.en_text = auto_complete_missing_translation(
+                clean_hmn, matched.vi_text or "", matched.en_text or ""
+            )
         if clean_note and clean_note not in (matched.note or ""):
             matched.note = f"{matched.note} · {clean_note}".strip(" ·") if matched.note else clean_note
         if not matched.phonetic:
             matched.phonetic = generate_hmong_phonetics(clean_hmn)
+        if not matched.pos_code or matched.pos_code == "(nth) nthe":
+            matched.pos_code = inferred_pos
         matched.revision_count = int(matched.revision_count or 1) + 1
         db.flush()
         return matched, False
@@ -107,7 +123,7 @@ def upsert_and_enrich_corpus_entry(
         vi_text=clean_vi,
         en_text=clean_en,
         phonetic=generate_hmong_phonetics(clean_hmn),
-        pos_code="(nth) nthe",
+        pos_code=inferred_pos,
         note=clean_note
         or (
             f"Đóng góp bởi {source_name}"
@@ -166,25 +182,33 @@ def list_corpus_entries(
             or q in (r.source_name or "").lower()
         ]
 
+    serialized_items = [serialize_corpus_entry(r) for r in filtered]
+    serialized_logs = [
+        {
+            "id": d.id,
+            "filename": d.filename,
+            "file_format": d.file_format,
+            "total_lines": d.total_lines,
+            "learned_count": d.learned_count,
+            "inserted_count": d.learned_count,
+            "updated_count": d.updated_count,
+            "uploaded_by_email": d.uploaded_by_email,
+            "created_at": d.created_at.isoformat() if d.created_at else None,
+        }
+        for d in doc_logs
+    ]
+
     return {
+        "total": len(all_rows),
         "total_entries": len(all_rows),
+        "user_contribution_count": user_contrib_count,
         "user_contributions_count": user_contrib_count,
+        "admin_document_count": admin_doc_count,
         "admin_documents_count": admin_doc_count,
         "total_documents_uploaded": len(doc_logs),
-        "items": [serialize_corpus_entry(r) for r in filtered],
-        "document_logs": [
-            {
-                "id": d.id,
-                "filename": d.filename,
-                "file_format": d.file_format,
-                "total_lines": d.total_lines,
-                "learned_count": d.learned_count,
-                "updated_count": d.updated_count,
-                "uploaded_by_email": d.uploaded_by_email,
-                "created_at": d.created_at.isoformat() if d.created_at else None,
-            }
-            for d in doc_logs
-        ],
+        "entries": serialized_items,
+        "items": serialized_items,
+        "document_logs": serialized_logs,
     }
 
 
@@ -274,7 +298,12 @@ def admin_upload_and_train_document(
             if h and (v or e):
                 parsed_rows.append({"hmn_text": h, "vi_text": v, "en_text": e, "note": n})
 
-    if payload.content and payload.content.strip():
+    if not parsed_rows and payload.file_base64:
+        extracted_text = extract_text_from_binary_document(filename, payload.file_base64)
+        if extracted_text:
+            parsed_rows.extend(parse_document_content_to_entries(filename, extracted_text))
+
+    if not parsed_rows and payload.content and payload.content.strip():
         parsed_rows.extend(parse_document_content_to_entries(filename, payload.content))
 
     if not parsed_rows:
@@ -320,17 +349,73 @@ def admin_upload_and_train_document(
     db.commit()
     sync_dynamic_corpus_from_db(db)
 
+    total_corpus_size = db.query(CorpusEntry).count()
+
     return {
         "status": "trained",
         "filename": filename,
         "total_extracted": len(parsed_rows),
         "learned_count": learned_count,
+        "inserted_count": learned_count,
         "updated_count": updated_count,
+        "total_corpus_size": total_corpus_size,
         "message": (
             f"Hệ thống đã học thành công tài liệu '{filename}': "
             f"Thêm mới {learned_count} mục từ/câu và làm giàu/cập nhật {updated_count} mục từ có sẵn!"
         ),
         "entries": [serialize_corpus_entry(e) for e in processed_entries[:50]],
+    }
+
+
+@router.post("/admin/enrich-all")
+def admin_enrich_all_corpus_entries(
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_current_admin),
+):
+    """
+    Admin / Super Admin endpoint to scan all learned entries in `corpus_entries`,
+    automatically synthesize any missing 3rd-language translation (VI <-> EN),
+    compute RPA phonetics, and classify POS + Phrase Category so 100% of the corpus
+    is complete for all Learner modules (Translator, Lookup, Common Phrases, Flashcards, Quizzes).
+    """
+    sync_dynamic_corpus_from_db(db)
+    all_rows = db.query(CorpusEntry).all()
+    enriched_count = 0
+
+    for row in all_rows:
+        changed = False
+        new_vi, new_en = auto_complete_missing_translation(
+            row.hmn_text or "", row.vi_text or "", row.en_text or ""
+        )
+        if new_vi and not (row.vi_text or "").strip():
+            row.vi_text = new_vi
+            changed = True
+        if new_en and not (row.en_text or "").strip():
+            row.en_text = new_en
+            changed = True
+        if not (row.phonetic or "").strip():
+            row.phonetic = generate_hmong_phonetics(row.hmn_text or "")
+            changed = True
+        inferred_pos = infer_pos_code(row.hmn_text or "", row.vi_text or "", row.en_text or "")
+        if not (row.pos_code or "").strip() or row.pos_code == "(nth) nthe":
+            if inferred_pos != row.pos_code:
+                row.pos_code = inferred_pos
+                changed = True
+        if changed:
+            row.revision_count = int(row.revision_count or 1) + 1
+            enriched_count += 1
+
+    db.commit()
+    sync_dynamic_corpus_from_db(db)
+
+    return {
+        "status": "enriched",
+        "total_entries": len(all_rows),
+        "enriched_count": enriched_count,
+        "message": (
+            f"Đã chuẩn hóa và lấp đầy dữ liệu ngôn ngữ 3 chiều (HMN - VI - EN, Phiên âm RPA, Loại từ & Chủ đề) "
+            f"cho toàn bộ {len(all_rows)} mục trong Kho Tri Thức (cập nhật bổ sung {enriched_count} mục)!"
+        ),
     }
 
 

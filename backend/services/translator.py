@@ -7,10 +7,14 @@ Supports English (en) <-> Vietnamese/Kinh (vi) <-> Hmong (hmn)
 ============================================================================
 """
 
+import base64
 import csv
 import io
 import json
 import re
+import xml.etree.ElementTree as ET
+import zipfile
+import zlib
 from typing import Dict, Any, List, Optional
 
 POS_LABELS: Dict[str, Dict[str, str]] = {
@@ -101,10 +105,182 @@ def get_active_corpus() -> List[Dict[str, str]]:
     return DYNAMIC_CORPUS + DICTIONARY + COMMON_PHRASES
 
 
+def infer_pos_code(hmn_text: str, vi_text: str = "", en_text: str = "") -> str:
+    """
+    Automatically classifies Hmong words/phrases into linguistic Part-of-Speech (POS) codes:
+    - '(nth) nthe': Phrase / Conversational expression (>= 3 words or punctuation)
+    - '(u) ua': Verb (action words)
+    - '(y) yam': Noun (objects, places, classifiers lub/tus/daim/txoj)
+    - '(p) piav yam': Adjective (descriptive words)
+    - '(t) tswv': Pronoun
+    """
+    h = normalize_text(hmn_text)
+    v = normalize_text(vi_text)
+    e = normalize_text(en_text)
+    words = h.split()
+
+    if len(words) >= 3 or any(p in (hmn_text or "") for p in ("?", "!", ",", ".")):
+        return "(nth) nthe"
+    if h in ("kuv", "koj", "peb", "wb", "nws", "lawv", "nej", "neb"):
+        return "(t) tswv"
+    if words and words[0] in ("lub", "tus", "daim", "txoj", "cov", "tsob", "chav", "khob"):
+        return "(y) yam"
+    if any(
+        v.startswith(prefix)
+        for prefix in ("ăn", "uống", "đi", "đến", "mua", "bán", "học", "nói", "dịch", "giúp", "ngủ", "làm", "xem", "nghe", "hỏi")
+    ) or any(
+        e.startswith(prefix)
+        for prefix in ("to ", "eat", "drink", "go", "buy", "sell", "learn", "speak", "translate", "help", "sleep", "walk", "ask")
+    ):
+        return "(u) ua"
+    if any(
+        v.startswith(prefix)
+        for prefix in ("đẹp", "ngon", "tốt", "lạnh", "nóng", "xa", "gần", "đắt", "rẻ", "vui", "buồn", "mát")
+    ) or any(
+        e.startswith(prefix)
+        for prefix in ("beautiful", "delicious", "good", "cold", "hot", "far", "near", "expensive", "cheap", "happy", "cool")
+    ):
+        return "(p) piav yam"
+    if len(words) <= 2:
+        return "(y) yam"
+    return "(nth) nthe"
+
+
+def infer_phrase_category(hmn_text: str, vi_text: str = "", en_text: str = "") -> str:
+    """
+    Automatically classifies an uploaded or contributed entry into one of the 7
+    Common Phrase categories: greeting, directions, shopping, homestay, food, emergency, culture.
+    """
+    combined = f"{normalize_text(hmn_text)} {normalize_text(vi_text)} {normalize_text(en_text)}"
+    if any(k in combined for k in ("nyob zoo", "ua tsaug", "xin chào", "cảm ơn", "hello", "thank", "tên", "npe", "tạm biệt", "mus zoo", "khỏe")):
+        return "greeting"
+    if any(k in combined for k in ("qhov twg", "txoj kev", "đường", "ở đâu", "where", "road", "way", "left", "right", "rẽ", "xa", "gần", "deb", "ze", "trekking")):
+        return "directions"
+    if any(k in combined for k in ("pes tsawg", "nqi", "yuav", "mua", "bán", "giá", "bao nhiêu", "tiền", "price", "cost", "buy", "discount", "kim", "thổ cẩm", "paj ntaub")):
+        return "shopping"
+    if any(k in combined for k in ("homestay", "chav pw", "phòng", "ngủ", "chăn", "pam", "room", "sleep", "bed", "wifi", "tắm", "lưu trú", "tsev")):
+        return "homestay"
+    if any(k in combined for k in ("noj", "haus", "mov", "dej", "ăn", "uống", "cơm", "nước", "ngon", "qab", "food", "eat", "drink", "rice", "water", "thắng cố", "rượu")):
+        return "food"
+    if any(k in combined for k in ("mob", "kho mob", "bệnh", "đau", "thuốc", "cấp cứu", "bác sĩ", "help", "hospital", "doctor", "sick", "pain", "emergency", "khẩn cấp")):
+        return "emergency"
+    return "culture"
+
+
+VI_EN_LEXICON: Dict[str, str] = {
+    "xin chào": "hello",
+    "chào": "hello",
+    "gia đình": "family",
+    "của tôi": "my",
+    "tôi": "I",
+    "bạn": "you",
+    "chúng tôi": "we",
+    "chúng ta": "we",
+    "anh ấy": "he",
+    "cô ấy": "she",
+    "họ": "they",
+    "muốn": "want to",
+    "học": "learn",
+    "tiếng mông": "Hmong language",
+    "tiếng hmong": "Hmong language",
+    "tiếng việt": "Vietnamese",
+    "tiếng anh": "English",
+    "cảm ơn": "thank you",
+    "rất nhiều": "very much",
+    "giúp đỡ": "help",
+    "giúp": "help",
+    "đi": "go to",
+    "bản": "village",
+    "tả van": "Ta Van",
+    "đẹp": "beautiful",
+    "rất đẹp": "very beautiful",
+    "đẹp lắm": "very beautiful",
+    "nước": "water",
+    "suối": "stream",
+    "trong": "clear",
+    "và": "and",
+    "mát": "cool",
+    "ăn": "eat",
+    "cơm": "rice / meal",
+    "uống": "drink",
+    "nhà": "house",
+    "ruộng bậc thang": "terraced rice fields",
+    "thổ cẩm": "embroidered textile",
+    "bao nhiêu tiền": "how much does it cost",
+    "ở đâu": "where is",
+}
+
+
+def auto_complete_missing_translation(hmn_text: str, vi_text: str, en_text: str) -> tuple[str, str]:
+    """
+    Ensures every uploaded or contributed entry has BOTH Vietnamese (`vi_text`)
+    and English (`en_text`) translations so all language blocks (VI<->HMN, EN<->HMN, VI<->EN)
+    have 100% language coverage.
+    """
+    clean_hmn = (hmn_text or "").strip()
+    clean_vi = (vi_text or "").strip()
+    clean_en = (en_text or "").strip()
+
+    if clean_vi and clean_en:
+        return clean_vi, clean_en
+
+    # 1. Check if hmn_text already exists in static DICTIONARY or COMMON_PHRASES
+    norm_hmn = normalize_text(clean_hmn)
+    for item in DICTIONARY + COMMON_PHRASES:
+        if normalize_text(item.get("hmn", "")) == norm_hmn:
+            if not clean_vi and item.get("vi"):
+                clean_vi = item["vi"]
+            if not clean_en and item.get("en"):
+                clean_en = item["en"]
+            if clean_vi and clean_en:
+                return clean_vi, clean_en
+
+    # 2. If VI is present but EN is missing -> translate VI to EN via corpus + lexicon
+    if clean_vi and not clean_en:
+        try:
+            res = translate_text_3way(clean_vi, "vi", "en")
+            candidate_en = (res.get("translated_text") or "").strip()
+            if candidate_en and normalize_text(candidate_en) != normalize_text(clean_vi):
+                clean_en = candidate_en
+        except Exception:
+            pass
+
+        if not clean_en:
+            low_vi = clean_vi.lower()
+            for k_vi, v_en in sorted(VI_EN_LEXICON.items(), key=lambda x: len(x[0]), reverse=True):
+                low_vi = re.sub(rf"\b{re.escape(k_vi)}\b", v_en, low_vi)
+            if low_vi != clean_vi.lower():
+                clean_en = low_vi[0].upper() + low_vi[1:] if low_vi else clean_vi
+            else:
+                clean_en = clean_vi
+
+    # 3. If EN is present but VI is missing -> translate EN to VI via corpus + reverse lexicon
+    if clean_en and not clean_vi:
+        try:
+            res = translate_text_3way(clean_en, "en", "vi")
+            candidate_vi = (res.get("translated_text") or "").strip()
+            if candidate_vi and normalize_text(candidate_vi) != normalize_text(clean_en):
+                clean_vi = candidate_vi
+        except Exception:
+            pass
+
+        if not clean_vi:
+            low_en = clean_en.lower()
+            for k_vi, v_en in sorted(VI_EN_LEXICON.items(), key=lambda x: len(x[1]), reverse=True):
+                low_en = re.sub(rf"\b{re.escape(v_en.lower())}\b", k_vi, low_en)
+            if low_en != clean_en.lower():
+                clean_vi = low_en[0].upper() + low_en[1:] if low_en else clean_en
+            else:
+                clean_vi = clean_en
+
+    return clean_vi, clean_en
+
+
 def sync_dynamic_corpus_from_db(db_session) -> List[Dict[str, str]]:
     """
     Loads all learned CorpusEntry rows from the database into DYNAMIC_CORPUS
-    so the 3-way translation engine immediately uses all community & admin knowledge.
+    so the 3-way translation engine, smart lookup, and common phrases immediately
+    use all community & admin knowledge.
     """
     global DYNAMIC_CORPUS
     try:
@@ -118,6 +294,8 @@ def sync_dynamic_corpus_from_db(db_session) -> List[Dict[str, str]]:
             en_val = (r.en_text or "").strip()
             if not hmn_val:
                 continue
+            pos_code = r.pos_code or infer_pos_code(hmn_val, vi_val, en_val)
+            category = infer_phrase_category(hmn_val, vi_val, en_val)
             loaded.append(
                 {
                     "id": f"c_{r.id}",
@@ -125,7 +303,11 @@ def sync_dynamic_corpus_from_db(db_session) -> List[Dict[str, str]]:
                     "vi": vi_val or en_val or hmn_val,
                     "en": en_val or vi_val or hmn_val,
                     "phonetic": r.phonetic or generate_hmong_phonetics(hmn_val),
-                    "pos": "nth",
+                    "pos": "nth" if "nth" in pos_code else ("u" if "(u)" in pos_code else ("y" if "(y)" in pos_code else "nth")),
+                    "pos_code": pos_code,
+                    "category": category,
+                    "source_type": r.source_type or "user_contribution",
+                    "source_name": r.source_name or "Trilinguo Corpus",
                     "note": r.note
                     or (
                         f"Đóng góp từ cộng đồng ({r.source_name or 'Học viên'})"
@@ -309,9 +491,177 @@ def translate_text_3way(text: str, source_lang: str, target_lang: str) -> Dict[s
     }
 
 
+def extract_text_from_binary_document(filename: str, file_base64: str) -> str:
+    """
+    Extracts structured plain text (including Word tables joined with ' | ')
+    from binary documents (.docx, .doc, .pdf) encoded in Base64.
+    """
+    if not file_base64:
+        return ""
+
+    b64_clean = file_base64.strip()
+    if "," in b64_clean and b64_clean.lower().startswith("data:"):
+        b64_clean = b64_clean.split(",", 1)[1]
+
+    try:
+        raw_bytes = base64.b64decode(b64_clean)
+    except Exception:
+        return ""
+
+    if not raw_bytes:
+        return ""
+
+    ext = (filename or "").lower().rsplit(".", 1)[-1] if "." in (filename or "") else ""
+    lines_out: List[str] = []
+
+    # ------------------------------------------------------------------
+    # 1. WORD .DOCX READER (ZIP + word/document.xml Table & Paragraph Parser)
+    # ------------------------------------------------------------------
+    if ext == "docx" or raw_bytes[:4] == b"PK\x03\x04":
+        try:
+            with zipfile.ZipFile(io.BytesIO(raw_bytes)) as zf:
+                if "word/document.xml" in zf.namelist():
+                    xml_bytes = zf.read("word/document.xml")
+                    root = ET.fromstring(xml_bytes)
+                    ns_w = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+                    body = root.find(f".//{ns_w}body")
+                    target_parent = body if body is not None else root
+
+                    for child in list(target_parent):
+                        # Paragraph <w:p>
+                        if child.tag == f"{ns_w}p":
+                            parts: List[str] = []
+                            for node in child.iter():
+                                if node.tag == f"{ns_w}t" and node.text:
+                                    parts.append(node.text)
+                                elif node.tag == f"{ns_w}tab":
+                                    parts.append(" | ")
+                                elif node.tag in (f"{ns_w}br", f"{ns_w}cr"):
+                                    parts.append("\n")
+                            para_text = "".join(parts).strip()
+                            if para_text:
+                                lines_out.append(para_text)
+
+                        # Table <w:tbl> -> each row <w:tr> becomes "Cell 1 | Cell 2 | Cell 3"
+                        elif child.tag == f"{ns_w}tbl":
+                            for tr in child.findall(f".//{ns_w}tr"):
+                                row_cells: List[str] = []
+                                for tc in tr.findall(f"./{ns_w}tc"):
+                                    cell_texts = [
+                                        t.text.strip()
+                                        for t in tc.findall(f".//{ns_w}t")
+                                        if t.text and t.text.strip()
+                                    ]
+                                    row_cells.append(" ".join(cell_texts).strip())
+                                if any(row_cells):
+                                    lines_out.append(" | ".join(row_cells))
+
+                    if lines_out:
+                        return "\n".join(lines_out)
+        except Exception:
+            pass
+
+        # Fallback to python-docx if installed
+        try:
+            import docx  # type: ignore
+            doc = docx.Document(io.BytesIO(raw_bytes))
+            for p in doc.paragraphs:
+                if p.text and p.text.strip():
+                    lines_out.append(p.text.strip())
+            for tbl in doc.tables:
+                for row in tbl.rows:
+                    cells = [c.text.strip().replace("\n", " ") for c in row.cells]
+                    if any(cells):
+                        lines_out.append(" | ".join(cells))
+            if lines_out:
+                return "\n".join(lines_out)
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
+    # 2. PDF READER (.PDF via pypdf + FlateDecode fallback)
+    # ------------------------------------------------------------------
+    if ext == "pdf" or raw_bytes[:4] == b"%PDF":
+        try:
+            from pypdf import PdfReader  # type: ignore
+            reader = PdfReader(io.BytesIO(raw_bytes))
+            for page in reader.pages:
+                page_txt = page.extract_text() or ""
+                if page_txt.strip():
+                    lines_out.append(page_txt.strip())
+            if lines_out:
+                return "\n".join(lines_out)
+        except Exception:
+            pass
+
+        # Pure-Python PDF stream fallback if pypdf is not available
+        try:
+            pdf_str = raw_bytes.decode("latin-1", errors="ignore")
+            for match in re.finditer(rb"stream[\r\n]+(.*?)[\r\n]+endstream", raw_bytes, re.DOTALL):
+                stream_data = match.group(1)
+                try:
+                    decompressed = zlib.decompress(stream_data).decode("utf-8", errors="ignore")
+                except Exception:
+                    decompressed = stream_data.decode("latin-1", errors="ignore")
+                for txt_match in re.findall(r"\(([^()\\]{2,})\)", decompressed):
+                    if any(ch.isalpha() for ch in txt_match):
+                        lines_out.append(txt_match.strip())
+            if not lines_out:
+                for txt_match in re.findall(r"\(([^()\\]{3,})\)", pdf_str):
+                    if any(ch.isalpha() for ch in txt_match):
+                        lines_out.append(txt_match.strip())
+            if lines_out:
+                return "\n".join(lines_out)
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
+    # 3. LEGACY WORD .DOC / RTF / UTF-16LE / UTF-8 TEXT EXTRACTOR
+    # ------------------------------------------------------------------
+    try:
+        # Try UTF-8 first
+        decoded_utf8 = raw_bytes.decode("utf-8", errors="ignore")
+        printable_lines = [
+            ln.strip()
+            for ln in decoded_utf8.splitlines()
+            if len(ln.strip()) >= 3 and sum(c.isprintable() for c in ln) / max(1, len(ln)) > 0.85
+        ]
+        if len(printable_lines) >= 2:
+            return "\n".join(printable_lines)
+    except Exception:
+        pass
+
+    try:
+        # Legacy MS Word .doc stores Unicode text in UTF-16LE chunks
+        decoded_u16 = raw_bytes.decode("utf-16le", errors="ignore")
+        chunks = re.findall(r"[\w\s\u00C0-\u1EF9,\.|;\-\–\—\(\):/]{5,}", decoded_u16)
+        cleaned_chunks = [c.strip() for c in chunks if len(c.strip()) >= 5 and any(ch.isalpha() for ch in c)]
+        if cleaned_chunks:
+            return "\n".join(cleaned_chunks)
+    except Exception:
+        pass
+
+    return ""
+
+
+def _split_second_col_parenthetical(second_col: str, third_col: str) -> tuple[str, str]:
+    """
+    If a line in Word/PDF only has 2 columns like:
+      'Nyob zoo - Xin chào (Hello)'
+    splits 'Xin chào (Hello)' into vi='Xin chào', en='Hello'.
+    """
+    vi = (second_col or "").strip()
+    en = (third_col or "").strip()
+    if vi and not en:
+        m = re.match(r"^(.+?)\s*\(([^()]{2,})\)\s*$", vi)
+        if m:
+            return m.group(1).strip(), m.group(2).strip()
+    return vi, en
+
+
 def parse_document_content_to_entries(filename: str, raw_content: str) -> List[Dict[str, str]]:
     """
-    Intelligently parses an uploaded document (.csv, .tsv, .json, .txt, .md)
+    Intelligently parses an uploaded document (.csv, .tsv, .json, .txt, .md, .docx, .doc, .pdf)
     into normalized corpus entries: [{'hmn_text', 'vi_text', 'en_text', 'note'}].
     Requires hmn_text and at least 1 of (vi_text, en_text).
     """
@@ -343,7 +693,7 @@ def parse_document_content_to_entries(filename: str, raw_content: str) -> List[D
             pass
 
     # 2. CSV / TSV format
-    if ext in ("csv", "tsv") or ("\t" in content and "\n" in content):
+    if ext in ("csv", "tsv") or ("\t" in content and "\n" in content and "|" not in content):
         try:
             delimiter = "\t" if (ext == "tsv" or content.count("\t") > content.count(",")) else ","
             reader = csv.reader(io.StringIO(content), delimiter=delimiter)
@@ -352,12 +702,13 @@ def parse_document_content_to_entries(filename: str, raw_content: str) -> List[D
                 if len(cols) < 2:
                     continue
                 first_low = cols[0].lower()
-                if idx == 0 and first_low in ("hmn", "hmong", "hmn_text", "tiếng mông", "tiếng hmong", "tu_vung"):
+                if idx == 0 and first_low in ("hmn", "hmong", "hmn_text", "tiếng mông", "tiếng hmong", "tu_vung", "stt"):
                     continue
                 hmn = cols[0]
                 vi = cols[1] if len(cols) > 1 else ""
                 en = cols[2] if len(cols) > 2 else ""
                 note = cols[3] if len(cols) > 3 else ""
+                vi, en = _split_second_col_parenthetical(vi, en)
                 if hmn and (vi or en):
                     extracted.append({"hmn_text": hmn, "vi_text": vi, "en_text": en, "note": note})
             if extracted:
@@ -365,33 +716,88 @@ def parse_document_content_to_entries(filename: str, raw_content: str) -> List[D
         except Exception:
             pass
 
-    # 3. Free-form Text / Markdown (.txt, .md) line-by-line parsing
+    # 3. Labeled Block Format in Word / PDF (e.g. "Hmong: ...\nViệt: ...\nAnh: ...")
+    labeled_block: Dict[str, str] = {"hmn_text": "", "vi_text": "", "en_text": "", "note": ""}
+
+    def flush_labeled_block() -> None:
+        if labeled_block["hmn_text"] and (labeled_block["vi_text"] or labeled_block["en_text"]):
+            extracted.append(dict(labeled_block))
+        labeled_block["hmn_text"] = ""
+        labeled_block["vi_text"] = ""
+        labeled_block["en_text"] = ""
+        labeled_block["note"] = ""
+
+    # 4. Line-by-line parsing (.txt, .md, .docx, .doc, .pdf)
     for raw_line in content.splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#") or line.startswith("//"):
+            flush_labeled_block()
             continue
-        # Strip leading bullet or numbering like "1. " or "- "
-        line = re.sub(r"^(?:\d+[\.\)]\s*|[-*•]\s*)", "", line).strip()
+
+        # Strip leading Markdown table pipe or numbering/bullets like "1. ", "1) ", "- ", "• "
+        if line.startswith("|") and line.endswith("|"):
+            line = line.strip("|").strip()
+        if re.match(r"^[-:| ]+$", line):
+            continue
+        line = re.sub(r"^(?:\d+[\.\)]\s*|[-*•▪▸]\s*)", "", line).strip()
         if not line:
             continue
 
+        # Check labeled lines ("Tiếng Mông: ...", "Tiếng Việt: ...", "Tiếng Anh: ...")
+        m_label = re.match(
+            r"^(tiếng\s*mông|tiếng\s*hmong|hmong|hmn|lus\s*hmoob|tiếng\s*việt|tiếng\s*kinh|việt|vi|vietnamese|tiếng\s*anh|anh|en|english|ghi\s*chú|note)\s*[:\-]\s*(.+)$",
+            line,
+            flags=re.IGNORECASE,
+        )
+        if m_label:
+            key_raw = m_label.group(1).lower()
+            val_raw = m_label.group(2).strip()
+            if any(k in key_raw for k in ("mông", "hmong", "hmn", "hmoob")):
+                if labeled_block["hmn_text"]:
+                    flush_labeled_block()
+                labeled_block["hmn_text"] = val_raw
+            elif any(k in key_raw for k in ("việt", "kinh", "vi")):
+                labeled_block["vi_text"] = val_raw
+            elif any(k in key_raw for k in ("anh", "en")):
+                labeled_block["en_text"] = val_raw
+            else:
+                labeled_block["note"] = val_raw
+            continue
+
+        flush_labeled_block()
+
         parts: List[str] = []
-        for sep in ("|", "\t", ";", " — ", " - ", " = ", " : "):
+        for sep in ("|", "\t", ";", " — ", " – ", " - ", " = ", " : "):
             if sep in line:
-                parts = [p.strip() for p in line.split(sep)]
+                parts = [p.strip().strip('"').strip("'") for p in line.split(sep)]
                 break
         if not parts and "," in line:
-            parts = [p.strip() for p in line.split(",")]
+            parts = [p.strip().strip('"').strip("'") for p in line.split(",")]
+
+        # Filter out leading index column if a Word/PDF table has "STT | Tiếng Mông | Tiếng Việt | Tiếng Anh"
+        if len(parts) >= 3 and parts[0].isdigit():
+            parts = parts[1:]
 
         if len(parts) >= 2:
             hmn = parts[0]
             vi = parts[1] if len(parts) > 1 else ""
             en = parts[2] if len(parts) > 2 else ""
             note = parts[3] if len(parts) > 3 else ""
-            if hmn.lower() in ("hmn", "hmong", "tiếng mông", "tiếng hmong"):
+            if hmn.lower() in (
+                "hmn",
+                "hmong",
+                "hmn_text",
+                "tiếng mông",
+                "tiếng hmong",
+                "từ tiếng mông",
+                "stt",
+            ):
                 continue
+            vi, en = _split_second_col_parenthetical(vi, en)
             if hmn and (vi or en):
                 extracted.append({"hmn_text": hmn, "vi_text": vi, "en_text": en, "note": note})
 
+    flush_labeled_block()
     return extracted
+
 

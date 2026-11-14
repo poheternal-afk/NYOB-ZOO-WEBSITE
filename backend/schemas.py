@@ -201,6 +201,7 @@ class CorpusBatchItemInput(BaseModel):
 class AdminDocumentUploadRequest(BaseModel):
     filename: str = Field(..., min_length=1, max_length=255)
     content: Optional[str] = Field(default="")
+    file_base64: Optional[str] = Field(default=None, description="Base64 binary content for .docx, .doc, or .pdf files")
     entries: Optional[List[CorpusBatchItemInput]] = Field(default=None)
 
 

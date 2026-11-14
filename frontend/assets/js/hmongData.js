@@ -740,39 +740,179 @@
     };
   }
 
+  const VI_EN_BRIDGE = {
+    'xin chào': 'hello',
+    'chào': 'hello',
+    'gia đình': 'family',
+    'của tôi': 'my',
+    'tôi': 'I',
+    'bạn': 'you',
+    'chúng tôi': 'we',
+    'chúng ta': 'we',
+    'muốn': 'want to',
+    'học': 'learn',
+    'tiếng mông': 'Hmong language',
+    'tiếng hmong': 'Hmong language',
+    'tiếng việt': 'Vietnamese',
+    'tiếng anh': 'English',
+    'cảm ơn': 'thank you',
+    'rất nhiều': 'very much',
+    'giúp đỡ': 'help',
+    'giúp': 'help',
+    'đi': 'go to',
+    'bản': 'village',
+    'tả van': 'Ta Van',
+    'đẹp lắm': 'very beautiful',
+    'rất đẹp': 'very beautiful',
+    'đẹp': 'beautiful',
+    'nước suối': 'stream water',
+    'nước': 'water',
+    'trong': 'clear',
+    'và': 'and',
+    'mát': 'cool',
+    'ăn cơm': 'eat a meal',
+    'ăn': 'eat',
+    'uống': 'drink',
+    'nhà': 'house',
+    'ruộng bậc thang': 'terraced rice fields',
+    'thổ cẩm': 'embroidered textile',
+    'bao nhiêu tiền': 'how much does it cost',
+    'ở đâu': 'where is'
+  };
+
+  function inferPosKey(hmnText, viText, enText) {
+    const h = normalizeText(hmnText);
+    const v = normalizeText(viText);
+    const e = normalizeText(enText);
+    const words = h.split(/\s+/).filter(Boolean);
+    if (words.length >= 3 || /[?!,.]/.test(hmnText || '')) return 'nth';
+    if (['kuv', 'koj', 'peb', 'wb', 'nws', 'lawv'].includes(h)) return 't';
+    if (words[0] && ['lub', 'tus', 'daim', 'txoj', 'cov', 'chav'].includes(words[0])) return 'y';
+    if (
+      /^(ăn|uống|đi|đến|mua|bán|học|nói|dịch|giúp|ngủ|làm|xem|nghe|hỏi)\b/.test(v) ||
+      /^(to |eat|drink|go|buy|sell|learn|speak|translate|help|sleep|ask)\b/.test(e)
+    ) {
+      return 'u';
+    }
+    if (
+      /^(đẹp|ngon|tốt|lạnh|nóng|xa|gần|đắt|rẻ|vui|mát)\b/.test(v) ||
+      /^(beautiful|delicious|good|cold|hot|far|near|expensive|cheap|happy|cool)\b/.test(e)
+    ) {
+      return 'p';
+    }
+    return words.length <= 2 ? 'y' : 'nth';
+  }
+
+  function inferPhraseCategory(hmnText, viText, enText) {
+    const combined = `${normalizeText(hmnText)} ${normalizeText(viText)} ${normalizeText(enText)}`;
+    if (/(nyob zoo|ua tsaug|xin chào|cảm ơn|hello|thank|tên|npe|tạm biệt|mus zoo|khỏe)/.test(combined)) {
+      return 'greeting';
+    }
+    if (/(qhov twg|txoj kev|đường|ở đâu|where|road|way|left|right|rẽ|xa|gần|deb|ze|trekking)/.test(combined)) {
+      return 'directions';
+    }
+    if (/(pes tsawg|nqi|yuav|mua|bán|giá|bao nhiêu|tiền|price|cost|buy|discount|kim|thổ cẩm|paj ntaub)/.test(combined)) {
+      return 'shopping';
+    }
+    if (/(homestay|chav pw|phòng|ngủ|chăn|pam|room|sleep|bed|wifi|tắm|lưu trú|tsev)/.test(combined)) {
+      return 'homestay';
+    }
+    if (/(noj|haus|mov|dej|ăn|uống|cơm|nước|ngon|qab|food|eat|drink|rice|water|thắng cố|rượu)/.test(combined)) {
+      return 'food';
+    }
+    if (/(mob|kho mob|bệnh|đau|thuốc|cấp cứu|bác sĩ|help|hospital|doctor|sick|pain|emergency|khẩn cấp)/.test(combined)) {
+      return 'emergency';
+    }
+    return 'culture';
+  }
+
+  function autoCompleteMissingTranslations(hmnText, viText, enText) {
+    let vi = String(viText || '').trim();
+    let en = String(enText || '').trim();
+    const normHmn = normalizeText(hmnText);
+
+    if (vi && en) return { vi, en };
+
+    const existing = [...DICTIONARY, ...COMMON_PHRASES].find(
+      item => normalizeText(item.hmn) === normHmn
+    );
+    if (existing) {
+      if (!vi && existing.vi) vi = existing.vi;
+      if (!en && existing.en) en = existing.en;
+      if (vi && en) return { vi, en };
+    }
+
+    if (vi && !en) {
+      let lowVi = vi.toLowerCase();
+      Object.keys(VI_EN_BRIDGE)
+        .sort((a, b) => b.length - a.length)
+        .forEach(kVi => {
+          const regex = new RegExp(kVi.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+          lowVi = lowVi.replace(regex, VI_EN_BRIDGE[kVi]);
+        });
+      en =
+        lowVi !== vi.toLowerCase()
+          ? lowVi.charAt(0).toUpperCase() + lowVi.slice(1)
+          : vi;
+    } else if (en && !vi) {
+      let lowEn = en.toLowerCase();
+      Object.entries(VI_EN_BRIDGE)
+        .sort((a, b) => b[1].length - a[1].length)
+        .forEach(([kVi, vEn]) => {
+          const regex = new RegExp(vEn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+          lowEn = lowEn.replace(regex, kVi);
+        });
+      vi =
+        lowEn !== en.toLowerCase()
+          ? lowEn.charAt(0).toUpperCase() + lowEn.slice(1)
+          : en;
+    }
+
+    return { vi: vi || en || hmnText, en: en || vi || hmnText };
+  }
+
   /**
    * 10. INCREMENTAL CORPUS SYNCHRONIZATION (User Contributions + Admin Uploaded Documents)
-   * Merges learned entries directly into DICTIONARY so all 3-way translation,
-   * smart selection popover, and phrase matching immediately use new knowledge.
+   * Merges learned entries directly into BOTH DICTIONARY and COMMON_PHRASES so all
+   * 3-way translation, smart selection popover, Commonly Used Phrases (phrase.html),
+   * Flashcards, and Quizzes immediately have 100% full linguistic data.
    */
   function registerLearnedEntries(entries) {
     if (!Array.isArray(entries)) return;
     entries.forEach(item => {
       const hmn = String(item.hmn_text || item.hmn || '').trim();
-      const vi = String(item.vi_text || item.vi || '').trim();
-      const en = String(item.en_text || item.en || '').trim();
-      if (!hmn || (!vi && !en)) return;
+      const rawVi = String(item.vi_text || item.vi || '').trim();
+      const rawEn = String(item.en_text || item.en || '').trim();
+      if (!hmn || (!rawVi && !rawEn)) return;
 
+      const { vi: finalVi, en: finalEn } = autoCompleteMissingTranslations(
+        hmn,
+        rawVi,
+        rawEn
+      );
       const normHmn = normalizeText(hmn);
-      const existing = DICTIONARY.find(d => normalizeText(d.hmn) === normHmn);
-      const finalVi = vi || en || hmn;
-      const finalEn = en || vi || hmn;
       const phon = item.phonetic || generateHmongPhonetics(hmn);
+      const posKey = inferPosKey(hmn, finalVi, finalEn);
+      const category = item.category || inferPhraseCategory(hmn, finalVi, finalEn);
       const noteText =
         item.note ||
         (item.source_type === 'admin_document'
           ? `Trích xuất từ tài liệu Admin (${item.source_name || 'Document'})`
           : `Đóng góp từ cộng đồng (${item.source_name || 'Học viên'})`);
 
-      if (existing) {
-        if (vi && !normalizeText(existing.vi).includes(normalizeText(vi))) {
-          existing.vi = existing.vi ? `${existing.vi} / ${vi}` : vi;
+      // 1. Sync into DICTIONARY (for 3-way translation, word decomposition & smart selection lookup)
+      const existingDict = DICTIONARY.find(d => normalizeText(d.hmn) === normHmn);
+      if (existingDict) {
+        if (rawVi && !normalizeText(existingDict.vi).includes(normalizeText(rawVi))) {
+          existingDict.vi = existingDict.vi ? `${existingDict.vi} / ${rawVi}` : rawVi;
         }
-        if (en && !normalizeText(existing.en).includes(normalizeText(en))) {
-          existing.en = existing.en ? `${existing.en} / ${en}` : en;
+        if (rawEn && !normalizeText(existingDict.en).includes(normalizeText(rawEn))) {
+          existingDict.en = existingDict.en ? `${existingDict.en} / ${rawEn}` : rawEn;
         }
-        if (noteText && !String(existing.note || '').includes(noteText)) {
-          existing.note = existing.note ? `${existing.note} · ${noteText}` : noteText;
+        if (noteText && !String(existingDict.note || '').includes(noteText)) {
+          existingDict.note = existingDict.note
+            ? `${existingDict.note} · ${noteText}`
+            : noteText;
         }
       } else {
         DICTIONARY.unshift({
@@ -781,11 +921,36 @@
           vi: finalVi,
           en: finalEn,
           phonetic: phon,
-          pos: 'nth',
+          pos: posKey,
+          category,
           note: noteText,
           exampleHmn: hmn,
           exampleVi: finalVi,
           exampleEn: finalEn
+        });
+      }
+
+      // 2. Sync into COMMON_PHRASES (so phrase.html displays learned phrases & vocabulary cards)
+      const existingPhrase = COMMON_PHRASES.find(
+        p => normalizeText(p.hmn) === normHmn
+      );
+      if (existingPhrase) {
+        if (rawVi && !normalizeText(existingPhrase.vi).includes(normalizeText(rawVi))) {
+          existingPhrase.vi = existingPhrase.vi ? `${existingPhrase.vi} / ${rawVi}` : rawVi;
+        }
+        if (rawEn && !normalizeText(existingPhrase.en).includes(normalizeText(rawEn))) {
+          existingPhrase.en = existingPhrase.en ? `${existingPhrase.en} / ${rawEn}` : rawEn;
+        }
+      } else {
+        COMMON_PHRASES.unshift({
+          id: `cp_${item.id || Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          category,
+          hmn,
+          vi: finalVi,
+          en: finalEn,
+          phonetic: phon,
+          pos: posKey,
+          note: noteText
         });
       }
     });
@@ -813,6 +978,9 @@
     normalizeText,
     analyzeHmongTone,
     generateHmongPhonetics,
+    inferPosKey,
+    inferPhraseCategory,
+    autoCompleteMissingTranslations,
     lookupSelection,
     translateText,
     registerLearnedEntries

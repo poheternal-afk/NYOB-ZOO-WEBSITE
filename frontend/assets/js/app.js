@@ -881,6 +881,7 @@
     }
 
     const selectAllBtn = document.getElementById('nbSelectAllBtn');
+    const syncCorpusBtn = document.getElementById('nbSyncCorpusWordsBtn');
     const createFlashcardBtn = document.getElementById('nbCreateFlashcardBtn');
     const createQuizBtn = document.getElementById('nbCreateQuizBtn');
 
@@ -892,6 +893,44 @@
           cachedNotebookWords.forEach(w => selectedNotebookIds.add(w.id));
         }
         renderNotebookCardsDOM();
+      });
+    }
+
+    if (syncCorpusBtn) {
+      syncCorpusBtn.addEventListener('click', async () => {
+        if (!global.TrilinguoAPI.isLoggedIn()) {
+          openAuthModal();
+          return;
+        }
+        try {
+          const corpusRes = await global.TrilinguoAPI.getCorpusEntries();
+          const entries = (corpusRes && corpusRes.entries) || [];
+          if (!entries.length) {
+            showToast('Chưa có từ mới trong Kho Đóng Góp & Tài Liệu.', 'info');
+            return;
+          }
+          let addedCount = 0;
+          for (const item of entries.slice(0, 20)) {
+            const res = await global.TrilinguoAPI.saveToNotebook({
+              hmn: item.hmn_text,
+              vi: item.vi_text || item.en_text,
+              en: item.en_text || item.vi_text,
+              phonetic: item.phonetic || '',
+              posCode: item.pos_code || '(nth) nthe',
+              note: item.note || ''
+            });
+            if (res && res.isNew) addedCount += 1;
+          }
+          await renderNotebookCards();
+          showToast(
+            addedCount > 0
+              ? `🌱 Đã nạp thêm ${addedCount} từ/câu mới từ Tài liệu Admin & Cộng đồng vào Sổ tay cá nhân (Sẵn sàng tạo Flashcard & Quiz)!`
+              : 'Toàn bộ từ vựng trong Kho Tri Thức đã có sẵn trong Sổ tay cá nhân của bạn!',
+            'success'
+          );
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
       });
     }
 
@@ -1580,22 +1619,22 @@
           const vi = btn.getAttribute('data-contrib-save-vi') || hmn;
           const en = btn.getAttribute('data-contrib-save-en') || vi;
           const ph = btn.getAttribute('data-contrib-save-ph') || '';
-          const block = global.TrilinguoAPI.getActiveBlock();
-          const sourceText = block.nativeLang === 'en' ? (en || vi) : (vi || en);
           try {
-            const res = await global.TrilinguoAPI.saveWordToNotebook({
-              sourceText,
-              targetText: hmn,
+            const res = await global.TrilinguoAPI.saveToNotebook({
+              hmn,
+              vi: vi || en,
+              en: en || vi,
               hmnText: hmn,
               viText: vi || en,
               enText: en || vi,
               phonetic: ph,
               posCode: '(nth) nthe',
-              posLabel: 'Từ đóng góp cộng đồng',
               exampleSentence: hmn
             });
             showToast(
-              res.duplicated ? 'Từ này đã có trong Sổ tay cá nhân!' : 'Đã lưu từ đóng góp vào Sổ tay cá nhân!',
+              res && res.isNew === false
+                ? 'Từ này đã có trong Sổ tay cá nhân!'
+                : 'Đã lưu từ đóng góp vào Sổ tay cá nhân (Có thể luyện Flashcard & Quiz ngay)!',
               'success'
             );
           } catch (err) {

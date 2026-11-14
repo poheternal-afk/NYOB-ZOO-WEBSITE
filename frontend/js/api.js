@@ -1732,9 +1732,35 @@
         : s => s;
 
     const cleanHmn = String(hmn_text || '').trim();
-    const cleanVi = String(vi_text || '').trim();
-    const cleanEn = String(en_text || '').trim();
+    const rawVi = String(vi_text || '').trim();
+    const rawEn = String(en_text || '').trim();
+    const autoCompleted =
+      global.TrilinguoData && global.TrilinguoData.autoCompleteMissingTranslations
+        ? global.TrilinguoData.autoCompleteMissingTranslations(
+            cleanHmn,
+            rawVi,
+            rawEn
+          )
+        : { vi: rawVi || rawEn, en: rawEn || rawVi };
+    const cleanVi = autoCompleted.vi || rawVi;
+    const cleanEn = autoCompleted.en || rawEn;
     const cleanNote = String(note || '').trim();
+    const posKey =
+      global.TrilinguoData && global.TrilinguoData.inferPosKey
+        ? global.TrilinguoData.inferPosKey(cleanHmn, cleanVi, cleanEn)
+        : 'nth';
+    const posCodeMap = {
+      u: '(u) ua',
+      y: '(y) yam',
+      p: '(p) piav yam',
+      t: '(t) tswv',
+      nth: '(nth) nthe'
+    };
+    const posCode = posCodeMap[posKey] || '(nth) nthe';
+    const category =
+      global.TrilinguoData && global.TrilinguoData.inferPhraseCategory
+        ? global.TrilinguoData.inferPhraseCategory(cleanHmn, cleanVi, cleanEn)
+        : 'culture';
     const targetNorm = norm(cleanHmn);
 
     const existing = list.find(item => norm(item.hmn_text) === targetNorm);
@@ -1746,6 +1772,10 @@
           ? `${existing.note} · ${cleanNote}`
           : cleanNote;
       }
+      if (!existing.pos_code || existing.pos_code === '(nth) nthe') {
+        existing.pos_code = posCode;
+      }
+      existing.category = existing.category || category;
       existing.revision_count = Number(existing.revision_count || 1) + 1;
       existing.updated_at = new Date().toISOString();
       saveLocalCorpusList(list);
@@ -1758,7 +1788,8 @@
       vi_text: cleanVi,
       en_text: cleanEn,
       phonetic: genPhon(cleanHmn),
-      pos_code: '(nth) nthe',
+      pos_code: posCode,
+      category,
       note:
         cleanNote ||
         (source_type === 'admin_document'
@@ -1773,6 +1804,314 @@
     list.unshift(newEntry);
     saveLocalCorpusList(list);
     return { entry: newEntry, isNew: true };
+  }
+
+  function arrayBufferToBase64(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      binary += String.fromCharCode.apply(
+        null,
+        bytes.subarray(i, i + chunkSize)
+      );
+    }
+    return btoa(binary);
+  }
+
+  function loadExternalScriptOnce(src, globalCheckFn) {
+    if (globalCheckFn && globalCheckFn()) {
+      return Promise.resolve();
+    }
+    return new Promise((resolve, reject) => {
+      const existing = document.querySelector(`script[src="${src}"]`);
+      if (existing) {
+        existing.addEventListener('load', () => resolve());
+        existing.addEventListener('error', e => reject(e));
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = src;
+      script.async = true;
+      script.onload = () => resolve();
+      script.onerror = err => reject(err);
+      document.head.appendChild(script);
+    });
+  }
+
+  /**
+   * Native Browser .DOCX Reader (Unzips word/document.xml via Central Directory + DecompressionStream)
+   * Preserves Word <w:tbl> tables as "Cell 1 | Cell 2 | Cell 3" and <w:p> paragraphs!
+   */
+  async function extractDocxXmlInBrowser(arrayBuffer) {
+    const bytes = new Uint8Array(arrayBuffer);
+    const view = new DataView(arrayBuffer);
+    const decoder = new TextDecoder('utf-8');
+
+    // Locate End of Central Directory (EOCD: 0x06054b50)
+    let eocdOffset = -1;
+    const minEocd = Math.max(0, bytes.length - 65557);
+    for (let i = bytes.length - 22; i >= minEocd; i--) {
+      if (view.getUint32(i, true) === 0x06054b50) {
+        eocdOffset = i;
+        break;
+      }
+    }
+    if (eocdOffset === -1) return '';
+
+    const cdCount = view.getUint16(eocdOffset + 10, true);
+    const cdOffset = view.getUint32(eocdOffset + 16, true);
+    let ptr = cdOffset;
+    let docXmlBytes = null;
+
+    for (let idx = 0; idx < cdCount; idx++) {
+      if (ptr + 46 > bytes.length || view.getUint32(ptr, true) !== 0x02014b50) {
+        break;
+      }
+      const compMethod = view.getUint16(ptr + 10, true);
+      const compSize = view.getUint32(ptr + 20, true);
+      const nameLen = view.getUint16(ptr + 28, true);
+      const extraLen = view.getUint16(ptr + 30, true);
+      const commentLen = view.getUint16(ptr + 32, true);
+      const localHeaderOffset = view.getUint32(ptr + 42, true);
+      const entryName = decoder.decode(bytes.subarray(ptr + 46, ptr + 46 + nameLen));
+
+      if (entryName === 'word/document.xml') {
+        const lNameLen = view.getUint16(localHeaderOffset + 26, true);
+        const lExtraLen = view.getUint16(localHeaderOffset + 28, true);
+        const dataStart = localHeaderOffset + 30 + lNameLen + lExtraLen;
+        const compressedSlice = bytes.subarray(dataStart, dataStart + compSize);
+
+        if (compMethod === 0) {
+          docXmlBytes = compressedSlice;
+        } else if (compMethod === 8 && typeof DecompressionStream !== 'undefined') {
+          const ds = new DecompressionStream('deflate-raw');
+          const writer = ds.writable.getWriter();
+          writer.write(compressedSlice);
+          writer.close();
+          const decompressedBuf = await new Response(ds.readable).arrayBuffer();
+          docXmlBytes = new Uint8Array(decompressedBuf);
+        }
+        break;
+      }
+      ptr += 46 + nameLen + extraLen + commentLen;
+    }
+
+    if (!docXmlBytes) return '';
+
+    const xmlText = decoder.decode(docXmlBytes);
+    const xmlDoc = new DOMParser().parseFromString(xmlText, 'application/xml');
+    const body =
+      xmlDoc.getElementsByTagName('w:body')[0] ||
+      xmlDoc.getElementsByTagName('body')[0] ||
+      xmlDoc.documentElement;
+    if (!body) return '';
+
+    const linesOut = [];
+    Array.from(body.children || []).forEach(child => {
+      const tag = child.localName || child.nodeName.replace(/^w:/, '');
+      if (tag === 'p') {
+        let pText = '';
+        const walker = xmlDoc.createTreeWalker(child, NodeFilter.SHOW_ELEMENT);
+        let node = walker.nextNode();
+        while (node) {
+          const nTag = node.localName || node.nodeName.replace(/^w:/, '');
+          if (nTag === 't' && node.textContent) {
+            pText += node.textContent;
+          } else if (nTag === 'tab') {
+            pText += ' | ';
+          } else if (nTag === 'br' || nTag === 'cr') {
+            pText += '\n';
+          }
+          node = walker.nextNode();
+        }
+        if (pText.trim()) linesOut.push(pText.trim());
+      } else if (tag === 'tbl') {
+        const rows = Array.from(child.getElementsByTagName('w:tr'));
+        const trList =
+          rows.length > 0 ? rows : Array.from(child.getElementsByTagName('tr'));
+        trList.forEach(tr => {
+          const cells = Array.from(tr.children || []).filter(c => {
+            const cTag = c.localName || c.nodeName.replace(/^w:/, '');
+            return cTag === 'tc';
+          });
+          const cellTexts = cells.map(tc => {
+            const tNodes = Array.from(tc.getElementsByTagName('w:t'));
+            const list =
+              tNodes.length > 0
+                ? tNodes
+                : Array.from(tc.getElementsByTagName('t'));
+            return list
+              .map(t => (t.textContent || '').trim())
+              .filter(Boolean)
+              .join(' ')
+              .trim();
+          });
+          if (cellTexts.some(Boolean)) {
+            linesOut.push(cellTexts.join(' | '));
+          }
+        });
+      }
+    });
+
+    return linesOut.join('\n');
+  }
+
+  /**
+   * Browser PDF Reader using PDF.js (groups items on the same Y row with ' | ')
+   */
+  async function extractPdfTextInBrowser(arrayBuffer) {
+    try {
+      await loadExternalScriptOnce(
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
+        () => Boolean(global.pdfjsLib)
+      );
+      if (global.pdfjsLib) {
+        global.pdfjsLib.GlobalWorkerOptions.workerSrc =
+          'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        const loadingTask = global.pdfjsLib.getDocument({
+          data: arrayBuffer.slice(0)
+        });
+        const pdf = await loadingTask.promise;
+        const allLines = [];
+
+        for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+          const page = await pdf.getPage(pageNum);
+          const textContent = await page.getTextContent();
+          const rowBuckets = new Map();
+
+          (textContent.items || []).forEach(item => {
+            const str = (item.str || '').trim();
+            if (!str) return;
+            const y = item.transform ? Math.round(item.transform[5] / 4) * 4 : 0;
+            const x = item.transform ? item.transform[4] : 0;
+            if (!rowBuckets.has(y)) rowBuckets.set(y, []);
+            rowBuckets.get(y).push({ x, str });
+          });
+
+          const sortedY = Array.from(rowBuckets.keys()).sort((a, b) => b - a);
+          sortedY.forEach(y => {
+            const rowItems = rowBuckets
+              .get(y)
+              .sort((a, b) => a.x - b.x);
+            if (rowItems.length === 1) {
+              allLines.push(rowItems[0].str);
+            } else {
+              // Check if horizontal gaps between items are large (table columns)
+              let lineBuilder = rowItems[0].str;
+              for (let i = 1; i < rowItems.length; i++) {
+                const gap = rowItems[i].x - rowItems[i - 1].x;
+                lineBuilder +=
+                  gap > 45 ? ` | ${rowItems[i].str}` : ` ${rowItems[i].str}`;
+              }
+              allLines.push(lineBuilder.trim());
+            }
+          });
+        }
+
+        if (allLines.length > 0) {
+          return allLines.join('\n');
+        }
+      }
+    } catch (e) {
+      console.warn('PDF.js reader notice, falling back to stream reader:', e);
+    }
+    return '';
+  }
+
+  /**
+   * Reads any Admin uploaded file (.csv, .tsv, .txt, .json, .md, .docx, .doc, .pdf)
+   * and returns { filename, content, file_base64, entries }
+   */
+  async function extractDocumentFileInBrowser(file) {
+    const filename = file.name || 'tai_lieu_admin.txt';
+    const ext = filename.toLowerCase().split('.').pop();
+    const arrayBuffer = await file.arrayBuffer();
+    const fileBase64 = arrayBufferToBase64(arrayBuffer);
+    const bytes = new Uint8Array(arrayBuffer);
+    const isZipHeader =
+      bytes.length >= 4 &&
+      bytes[0] === 0x50 &&
+      bytes[1] === 0x4b &&
+      bytes[2] === 0x03 &&
+      bytes[3] === 0x04;
+    const isPdfHeader =
+      bytes.length >= 4 &&
+      bytes[0] === 0x25 &&
+      bytes[1] === 0x50 &&
+      bytes[2] === 0x44 &&
+      bytes[3] === 0x46;
+
+    let extractedText = '';
+
+    if (ext === 'docx' || isZipHeader) {
+      extractedText = await extractDocxXmlInBrowser(arrayBuffer);
+      if (!extractedText) {
+        try {
+          await loadExternalScriptOnce(
+            'https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.8.0/mammoth.browser.min.js',
+            () => Boolean(global.mammoth)
+          );
+          if (global.mammoth) {
+            const res = await global.mammoth.extractRawText({
+              arrayBuffer: arrayBuffer.slice(0)
+            });
+            extractedText = (res && res.value) || '';
+          }
+        } catch (e) {
+          console.warn('Mammoth fallback notice:', e);
+        }
+      }
+    } else if (ext === 'pdf' || isPdfHeader) {
+      extractedText = await extractPdfTextInBrowser(arrayBuffer);
+    } else if (ext === 'doc') {
+      // Legacy .doc: try UTF-8 printable lines, then UTF-16LE Unicode chunks
+      const utf8Text = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+      const utf8Lines = utf8Text
+        .split(/\r?\n/)
+        .map(s => s.trim())
+        .filter(
+          s =>
+            s.length >= 4 &&
+            /[\p{L}]/u.test(s) &&
+            !/[\x00-\x08\x0E-\x1F]/.test(s)
+        );
+      if (utf8Lines.length >= 2) {
+        extractedText = utf8Lines.join('\n');
+      } else {
+        const u16Text = new TextDecoder('utf-16le', { fatal: false }).decode(
+          bytes
+        );
+        const matches =
+          u16Text.match(/[\p{L}\p{N}\s,.;:|\-–—()/'"?!]{5,}/gu) || [];
+        extractedText = matches
+          .map(s => s.trim())
+          .filter(s => s.length >= 5 && /[\p{L}]/u.test(s))
+          .join('\n');
+      }
+    } else {
+      extractedText = await file.text();
+    }
+
+    const entries = parseDocumentContentInBrowser(filename, extractedText);
+    return {
+      filename,
+      content: extractedText,
+      file_base64: fileBase64,
+      entries
+    };
+  }
+
+  function splitSecondColParenthetical(viCol, enCol) {
+    const vi = String(viCol || '').trim();
+    const en = String(enCol || '').trim();
+    if (vi && !en) {
+      const m = vi.match(/^(.+?)\s*\(([^()]{2,})\)\s*$/);
+      if (m) {
+        return { vi: m[1].trim(), en: m[2].trim() };
+      }
+    }
+    return { vi, en };
   }
 
   function parseDocumentContentInBrowser(filename, rawContent) {
@@ -1820,16 +2159,65 @@
       }
     }
 
-    // 2. Line-by-line parser (.csv, .tsv, .txt, .md)
+    // 2. Labeled block + Line-by-line parser (.csv, .tsv, .txt, .md, .docx, .doc, .pdf)
+    let labeledBlock = { hmn_text: '', vi_text: '', en_text: '', note: '' };
+    function flushLabeledBlock() {
+      if (
+        labeledBlock.hmn_text &&
+        (labeledBlock.vi_text || labeledBlock.en_text)
+      ) {
+        extracted.push({ ...labeledBlock });
+      }
+      labeledBlock = { hmn_text: '', vi_text: '', en_text: '', note: '' };
+    }
+
     const lines = content.split(/\r?\n/);
     lines.forEach((rawLine, idx) => {
       let line = rawLine.trim();
-      if (!line || line.startsWith('#') || line.startsWith('//')) return;
-      line = line.replace(/^(?:\d+[.)]\s*|[-*•]\s*)/, '').trim();
+      if (!line || line.startsWith('#') || line.startsWith('//')) {
+        flushLabeledBlock();
+        return;
+      }
+      if (line.startsWith('|') && line.endsWith('|')) {
+        line = line.replace(/^\|+|\|+$/g, '').trim();
+      }
+      if (/^[-:| ]+$/.test(line)) return;
+      line = line.replace(/^(?:\d+[.)]\s*|[-*•▪▸]\s*)/, '').trim();
       if (!line) return;
 
+      const labelMatch = line.match(
+        /^(tiếng\s*mông|tiếng\s*hmong|hmong|hmn|lus\s*hmoob|tiếng\s*việt|tiếng\s*kinh|việt|vi|vietnamese|tiếng\s*anh|anh|en|english|ghi\s*chú|note)\s*[:\-]\s*(.+)$/i
+      );
+      if (labelMatch) {
+        const keyRaw = labelMatch[1].toLowerCase();
+        const valRaw = labelMatch[2].trim();
+        if (
+          keyRaw.includes('mông') ||
+          keyRaw.includes('hmong') ||
+          keyRaw.includes('hmn') ||
+          keyRaw.includes('hmoob')
+        ) {
+          if (labeledBlock.hmn_text) flushLabeledBlock();
+          labeledBlock.hmn_text = valRaw;
+        } else if (
+          keyRaw.includes('việt') ||
+          keyRaw.includes('kinh') ||
+          keyRaw === 'vi' ||
+          keyRaw.includes('vietnamese')
+        ) {
+          labeledBlock.vi_text = valRaw;
+        } else if (keyRaw.includes('anh') || keyRaw === 'en' || keyRaw.includes('english')) {
+          labeledBlock.en_text = valRaw;
+        } else {
+          labeledBlock.note = valRaw;
+        }
+        return;
+      }
+
+      flushLabeledBlock();
+
       let parts = [];
-      const seps = ['|', '\t', ';', ' — ', ' - ', ' = ', ' : '];
+      const seps = ['|', '\t', ';', ' — ', ' – ', ' - ', ' = ', ' : '];
       for (const sep of seps) {
         if (line.includes(sep)) {
           parts = line.split(sep).map(s => s.replace(/^["']|["']$/g, '').trim());
@@ -1840,18 +2228,31 @@
         parts = line.split(',').map(s => s.replace(/^["']|["']$/g, '').trim());
       }
 
+      if (parts.length >= 3 && /^\d+$/.test(parts[0])) {
+        parts = parts.slice(1);
+      }
+
       if (parts.length >= 2) {
         const hmn = parts[0] || '';
-        const vi = parts[1] || '';
-        const en = parts[2] || '';
+        const rawVi = parts[1] || '';
+        const rawEn = parts[2] || '';
         const note = parts[3] || '';
         const low = hmn.toLowerCase();
         if (
           idx === 0 &&
-          ['hmn', 'hmong', 'hmn_text', 'tiếng mông', 'tiếng hmong'].includes(low)
+          [
+            'hmn',
+            'hmong',
+            'hmn_text',
+            'tiếng mông',
+            'tiếng hmong',
+            'từ tiếng mông',
+            'stt'
+          ].includes(low)
         ) {
           return;
         }
+        const { vi, en } = splitSecondColParenthetical(rawVi, rawEn);
         if (hmn && (vi || en)) {
           extracted.push({
             hmn_text: hmn,
@@ -1863,10 +2264,21 @@
       }
     });
 
+    flushLabeledBlock();
     return extracted;
   }
 
-  async function getCorpusEntries({ source_type = 'all', search = '' } = {}) {
+  async function getCorpusEntries(arg1 = {}, arg2 = 'all') {
+    let source_type = 'all';
+    let search = '';
+    if (typeof arg1 === 'string') {
+      search = arg1;
+      source_type = arg2 || 'all';
+    } else if (arg1 && typeof arg1 === 'object') {
+      source_type = arg1.source_type || arg1.source || 'all';
+      search = arg1.search || '';
+    }
+
     try {
       const params = new URLSearchParams();
       if (source_type && source_type !== 'all') {
@@ -1877,14 +2289,39 @@
       }
       const q = params.toString() ? `?${params.toString()}` : '';
       const res = await apiRequest(`/corpus/entries${q}`, { method: 'GET' });
-      if (res && Array.isArray(res.items)) {
-        saveLocalCorpusList(res.items);
+      const items = (res && (res.items || res.entries)) || [];
+      if (Array.isArray(items)) {
+        saveLocalCorpusList(items);
       }
-      return res;
+      const docLogs = ((res && res.document_logs) || []).map(d => ({
+        ...d,
+        inserted_count: d.inserted_count ?? d.learned_count ?? 0,
+        learned_count: d.learned_count ?? d.inserted_count ?? 0
+      }));
+      return {
+        ...res,
+        total: res.total ?? res.total_entries ?? items.length,
+        total_entries: res.total_entries ?? res.total ?? items.length,
+        user_contribution_count:
+          res.user_contribution_count ?? res.user_contributions_count ?? 0,
+        user_contributions_count:
+          res.user_contributions_count ?? res.user_contribution_count ?? 0,
+        admin_document_count:
+          res.admin_document_count ?? res.admin_documents_count ?? 0,
+        admin_documents_count:
+          res.admin_documents_count ?? res.admin_document_count ?? 0,
+        entries: items,
+        items,
+        document_logs: docLogs
+      };
     } catch (err) {
       if (isFallbackError(err)) {
         const allItems = ensureLocalCorpusList();
-        const docLogs = ensureLocalDocLogs();
+        const docLogs = ensureLocalDocLogs().map(d => ({
+          ...d,
+          inserted_count: d.inserted_count ?? d.learned_count ?? 0,
+          learned_count: d.learned_count ?? d.inserted_count ?? 0
+        }));
         const userCount = allItems.filter(
           r => r.source_type === 'user_contribution'
         ).length;
@@ -1907,10 +2344,14 @@
           );
         }
         return {
+          total: allItems.length,
           total_entries: allItems.length,
+          user_contribution_count: userCount,
           user_contributions_count: userCount,
+          admin_document_count: adminCount,
           admin_documents_count: adminCount,
           total_documents_uploaded: docLogs.length,
+          entries: filtered,
           items: filtered,
           document_logs: docLogs
         };
@@ -1919,11 +2360,13 @@
     }
   }
 
-  async function submitUserContribution({ hmnText, viText, enText, note }) {
-    const cleanHmn = String(hmnText || '').trim();
-    const cleanVi = String(viText || '').trim();
-    const cleanEn = String(enText || '').trim();
-    const cleanNote = String(note || '').trim();
+  async function submitUserContribution(payload = {}) {
+    const cleanHmn = String(
+      payload.hmnText || payload.hmn_text || ''
+    ).trim();
+    const cleanVi = String(payload.viText || payload.vi_text || '').trim();
+    const cleanEn = String(payload.enText || payload.en_text || '').trim();
+    const cleanNote = String(payload.note || '').trim();
 
     if (!cleanHmn) {
       throw new Error('Vui lòng nhập từ hoặc câu Tiếng Hmong!');
@@ -1975,16 +2418,21 @@
     }
   }
 
-  async function adminUploadCorpusDocument({ filename, content, entries }) {
+  async function adminUploadCorpusDocument({
+    filename,
+    content,
+    file_base64,
+    entries
+  }) {
     const cleanName = String(filename || 'tai_lieu_admin.txt').trim();
     const parsedEntries =
       Array.isArray(entries) && entries.length > 0
         ? entries
         : parseDocumentContentInBrowser(cleanName, content);
 
-    if (!parsedEntries || parsedEntries.length === 0) {
+    if ((!parsedEntries || parsedEntries.length === 0) && !file_base64) {
       throw new Error(
-        'Không tìm thấy cặp từ/câu hợp lệ trong tài liệu. Đảm bảo mỗi dòng có Tiếng Hmong và ít nhất 1 bản dịch (Tiếng Việt hoặc Tiếng Anh), phân tách bằng dấu "|", dấu phẩy ",", tab hoặc dấu gạch ngang "-".'
+        'Không tìm thấy cặp từ/câu hợp lệ trong tài liệu. Đảm bảo mỗi dòng hoặc mỗi hàng trong bảng có Tiếng Hmong và ít nhất 1 bản dịch (Tiếng Việt hoặc Tiếng Anh).'
       );
     }
 
@@ -1994,15 +2442,25 @@
         body: JSON.stringify({
           filename: cleanName,
           content: content || '',
-          entries: parsedEntries
+          file_base64: file_base64 || null,
+          entries: parsedEntries && parsedEntries.length > 0 ? parsedEntries : null
         })
       });
       if (res && Array.isArray(res.entries)) {
         res.entries.forEach(e => upsertLocalCorpusItem(e));
       }
-      return res;
+      return {
+        ...res,
+        inserted_count: res.inserted_count ?? res.learned_count ?? 0,
+        learned_count: res.learned_count ?? res.inserted_count ?? 0
+      };
     } catch (err) {
       if (isFallbackError(err)) {
+        if (!parsedEntries || parsedEntries.length === 0) {
+          throw new Error(
+            `Không trích xuất được cặp câu Tiếng Mông - Dịch thuật từ tài liệu "${cleanName}". Hãy trình bày theo bảng 2-3 cột hoặc phân tách bằng dấu "|", "-", ",".`
+          );
+        }
         let learnedCount = 0;
         let updatedCount = 0;
         const processed = [];
@@ -2029,18 +2487,22 @@
           file_format: cleanName.split('.').pop() || 'txt',
           total_lines: parsedEntries.length,
           learned_count: learnedCount,
+          inserted_count: learnedCount,
           updated_count: updatedCount,
           uploaded_by_email: (u && u.email) || SUPER_ADMIN_EMAIL,
           created_at: new Date().toISOString()
         });
         localStorage.setItem(LOCAL_DOC_LOGS_KEY, JSON.stringify(logs.slice(0, 30)));
 
+        const allNow = ensureLocalCorpusList();
         return {
           status: 'trained',
           filename: cleanName,
           total_extracted: parsedEntries.length,
           learned_count: learnedCount,
+          inserted_count: learnedCount,
           updated_count: updatedCount,
+          total_corpus_size: allNow.length,
           message: `Hệ thống đã học thành công tài liệu '${cleanName}': Thêm mới ${learnedCount} mục từ/câu và làm giàu/cập nhật ${updatedCount} mục từ có sẵn!`,
           entries: processed.slice(0, 50)
         };
@@ -2075,8 +2537,63 @@
     }
   }
 
+  async function adminEnrichAllCorpusEntries() {
+    try {
+      const res = await apiRequest('/corpus/admin/enrich-all', {
+        method: 'POST'
+      });
+      await getCorpusEntries();
+      return res;
+    } catch (err) {
+      if (isFallbackError(err)) {
+        const list = ensureLocalCorpusList();
+        let enrichedCount = 0;
+        list.forEach(item => {
+          const h = String(item.hmn_text || '').trim();
+          const v = String(item.vi_text || '').trim();
+          const e = String(item.en_text || '').trim();
+          if (
+            global.TrilinguoData &&
+            global.TrilinguoData.autoCompleteMissingTranslations
+          ) {
+            const comp = global.TrilinguoData.autoCompleteMissingTranslations(
+              h,
+              v,
+              e
+            );
+            if ((!v && comp.vi) || (!e && comp.en)) {
+              item.vi_text = v || comp.vi;
+              item.en_text = e || comp.en;
+              item.revision_count = Number(item.revision_count || 1) + 1;
+              enrichedCount += 1;
+            }
+          }
+        });
+        saveLocalCorpusList(list);
+        return {
+          status: 'enriched',
+          total_entries: list.length,
+          enriched_count: enrichedCount,
+          message: `Đã chuẩn hóa và lấp đầy đủ 3 ngôn ngữ (HMN - VI - EN, Phiên âm RPA & Phân loại) cho toàn bộ ${list.length} mục!`
+        };
+      }
+      throw err;
+    }
+  }
+
   // Hydrate local corpus into TrilinguoData on boot
   ensureLocalCorpusList();
+
+  function getActiveBlock() {
+    const user = getCurrentUser();
+    const nativeLang = (user && user.nativeLang) || 'vi';
+    const targetLang = (user && user.targetLang) || 'hmn';
+    return {
+      nativeLang,
+      targetLang,
+      blockKey: makeBlockKey(nativeLang, targetLang)
+    };
+  }
 
   const clientExport = {
     API_BASE_URL,
@@ -2088,6 +2605,7 @@
     isLoggedIn,
     makeBlockKey,
     getActiveBlockKey,
+    getActiveBlock,
     apiRequest,
     verifyOtpAndLogin,
     fetchCurrentUser,
@@ -2098,6 +2616,7 @@
     fetchCommonPhrases,
     getNotebookWords,
     saveToNotebook,
+    saveWordToNotebook: saveToNotebook,
     toggleNotebookRemembered,
     removeFromNotebook,
     generateFlashcards,
@@ -2111,10 +2630,12 @@
     adminUpdateUser,
     adminUpdateUserRole,
     adminDeleteUser,
+    extractDocumentFileInBrowser,
     parseDocumentContentInBrowser,
     getCorpusEntries,
     submitUserContribution,
     adminUploadCorpusDocument,
+    adminEnrichAllCorpusEntries,
     adminDeleteCorpusEntry
   };
 

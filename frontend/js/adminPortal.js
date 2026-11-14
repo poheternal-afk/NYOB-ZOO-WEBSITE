@@ -789,13 +789,20 @@
     const userCount = cachedCorpusData.user_contribution_count ?? 0;
     const docCount = cachedCorpusData.admin_document_count ?? 0;
 
+    const viReadyCount = entries.filter(x => String(x.vi_text || '').trim().length > 0).length;
+    const enReadyCount = entries.filter(x => String(x.en_text || '').trim().length > 0).length;
+    const phonReadyCount = entries.filter(x => String(x.phonetic || '').trim().length > 0).length;
+    const viPct = entries.length ? Math.round((viReadyCount / entries.length) * 100) : 100;
+    const enPct = entries.length ? Math.round((enReadyCount / entries.length) * 100) : 100;
+    const phonPct = entries.length ? Math.round((phonReadyCount / entries.length) * 100) : 100;
+
     return `
       <div class="glass-panel" data-func-id="F-50" data-cmp-id="CMP-ADM-CORPUS">
         <div class="section-header" style="flex-wrap:wrap;gap:1rem;">
           <div>
             <h2 class="section-title" style="font-size:1.45rem;">🧠 Trung Tâm Nạp Tài Liệu &amp; Huấn Luyện Từ Điển AI 3 Chiều</h2>
             <p class="section-subtitle">
-              Tải lên file tài liệu (<code>.csv</code>, <code>.tsv</code>, <code>.txt</code>, <code>.json</code>, <code>.md</code>) hoặc nhập lô dữ liệu. Hệ thống Dịch thuật 3 chiều sẽ tự động học, gộp nghĩa bổ sung và cập nhật dần dần từ cả <strong>2 nguồn</strong>: <em>Đóng góp của Người học</em> và <em>Tài liệu của Admin</em>.
+              Tải lên file tài liệu <strong>Word (<code>.docx</code>, <code>.doc</code>)</strong>, <strong>PDF (<code>.pdf</code>)</strong>, hoặc bảng dữ liệu (<code>.csv</code>, <code>.tsv</code>, <code>.txt</code>, <code>.json</code>, <code>.md</code>). Hệ thống Dịch thuật 3 chiều sẽ tự động đọc bảng biểu/đoạn văn, học từ mới, gộp nghĩa bổ sung và cập nhật dần dần từ cả <strong>2 nguồn</strong>: <em>Đóng góp của Người học</em> và <em>Tài liệu của Admin</em>.
             </p>
           </div>
           <div style="display:flex;gap:0.65rem;flex-wrap:wrap;">
@@ -814,6 +821,43 @@
           </div>
         </div>
 
+        <!-- SYSTEM READINESS & 100% LANGUAGE COVERAGE GUARANTEE BANNER -->
+        <div style="background:rgba(15,118,110,0.07);border:1.5px solid rgba(15,118,110,0.25);border-radius:14px;padding:0.95rem 1.15rem;margin-bottom:1.15rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;">
+          <div style="flex:1;min-width:260px;">
+            <div style="font-weight:900;font-size:0.94rem;color:var(--color-main-dark-teal);margin-bottom:0.25rem;">
+              🛡️ Đảm Bảo Đầy Đủ Dữ Liệu Ngôn Ngữ Cho Toàn Bộ Chức Năng Học Viên (Dịch thuật · Tra từ · Mẫu câu · Flashcard · Quiz)
+            </div>
+            <div style="font-size:0.8rem;color:var(--text-secondary);">
+              Độ phủ hiện tại: <strong>Hmong (HMN): 100%</strong> · <strong>Tiếng Việt (VI): ${viPct}%</strong> · <strong>Tiếng Anh (EN): ${enPct}%</strong> · <strong>Phiên âm RPA &amp; Phân loại Chủ đề: ${phonPct}%</strong>
+            </div>
+          </div>
+          <div style="display:flex;gap:0.55rem;flex-wrap:wrap;align-items:center;">
+            <button type="button" id="adminEnrichAllCorpusBtn" class="btn-save-notebook" style="padding:0.48rem 0.9rem;font-size:0.8rem;">
+              ✨ Chuẩn hóa &amp; Lấp đầy Đủ 3 Ngôn ngữ (100%)
+            </button>
+          </div>
+        </div>
+
+        <!-- LIVE SANDBOX TESTER FOR ADMIN AFTER UPLOADING DOCUMENT -->
+        <div style="background:var(--surface-muted);border:1.5px solid var(--border-subtle);border-radius:14px;padding:0.9rem 1.15rem;margin-bottom:1.25rem;">
+          <div style="font-size:0.84rem;font-weight:900;color:var(--text-heading);margin-bottom:0.45rem;">
+            🧪 Kiểm Thử Nhanh Dữ Liệu Vừa Học (Test trực tiếp Dịch 3 chiều + Phiên âm RPA + Chủ đề Mẫu câu):
+          </div>
+          <div style="display:flex;gap:0.55rem;flex-wrap:wrap;">
+            <input
+              type="text"
+              id="adminLiveTestInput"
+              class="form-control"
+              style="flex:1;min-width:220px;"
+              placeholder="Nhập bất kỳ từ/câu Tiếng Mông, Tiếng Việt hoặc Tiếng Anh trong file vừa upload để kiểm tra..."
+            />
+            <button type="button" id="adminLiveTestBtn" class="btn-tool btn-tool--flashcard" style="padding:0.48rem 1rem;font-size:0.82rem;">
+              🔍 Kiểm tra dữ liệu học được
+            </button>
+          </div>
+          <div id="adminLiveTestResultBox" class="is-hidden" style="margin-top:0.65rem;padding:0.75rem 0.95rem;border-radius:10px;background:rgba(15,118,110,0.08);border:1px solid rgba(15,118,110,0.28);font-size:0.84rem;"></div>
+        </div>
+
         <!-- 2-COLUMN ADMIN CORPUS LAYOUT -->
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:1.35rem;align-items:start;margin-top:0.5rem;">
           <!-- LEFT COLUMN: DOCUMENT FILE UPLOADER & BATCH TRAINER -->
@@ -828,20 +872,20 @@
             </div>
 
             <div style="font-size:0.82rem;color:var(--text-secondary);line-height:1.5;margin-bottom:0.85rem;">
-              Hỗ trợ tải lên một hoặc nhiều file <strong>.csv, .tsv, .txt, .json, .md</strong>. Mỗi dòng gồm <strong>Từ/Câu Tiếng Mông</strong> (bắt buộc) và <strong>tối thiểu 1 trong 2 bản dịch</strong> (Tiếng Việt hoặc Tiếng Anh), phân tách bằng dấu <code>,</code>, <code>|</code> hoặc <code>Tab</code>.
+              Hỗ trợ bộ đọc tài liệu chuyên dụng cho <strong>Word (.docx, .doc)</strong>, <strong>PDF (.pdf)</strong> cùng các định dạng <strong>.csv, .tsv, .txt, .json, .md</strong>. Tự động nhận diện <strong>Bảng (Table 2-3 cột trong Word/PDF)</strong> hoặc các dòng phân tách bằng dấu <code>|</code>, <code>-</code>, <code>:</code>, <code>,</code>, <code>Tab</code> (gồm <strong>Từ/Câu Tiếng Mông</strong> và <strong>tối thiểu 1 bản dịch Việt hoặc Anh</strong>).
             </div>
 
             <label
               for="adminCorpusFileInput"
               style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:1.35rem 1rem;border:2px dashed rgba(15,118,110,0.45);border-radius:14px;background:rgba(15,118,110,0.05);cursor:pointer;text-align:center;transition:0.2s;"
             >
-              <span style="font-size:2rem;margin-bottom:0.3rem;">📁</span>
-              <span style="font-weight:800;color:var(--color-main-dark-teal);">Bấm để chọn File Tài liệu (.csv, .txt, .tsv, .json, .md)</span>
-              <span style="font-size:0.76rem;color:var(--text-muted);margin-top:0.2rem;">Có thể chọn nhiều file tài liệu cùng lúc</span>
+              <span style="font-size:2rem;margin-bottom:0.3rem;">📄📘📕</span>
+              <span style="font-weight:800;color:var(--color-main-dark-teal);">Bấm để chọn File Tài liệu (.docx, .doc, .pdf, .csv, .txt, .tsv, .json, .md)</span>
+              <span style="font-size:0.76rem;color:var(--text-muted);margin-top:0.2rem;">Hỗ trợ đọc trực tiếp Bảng &amp; Đoạn văn trong Word (.docx/.doc) và PDF (.pdf)</span>
               <input
                 type="file"
                 id="adminCorpusFileInput"
-                accept=".csv,.tsv,.txt,.json,.md"
+                accept=".doc,.docx,.pdf,.csv,.tsv,.txt,.json,.md,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 multiple
                 style="display:none;"
               />
@@ -1554,21 +1598,28 @@
           if (filePreview) filePreview.innerHTML = '';
           return;
         }
+        if (filePreview) {
+          filePreview.innerHTML = `
+            <div style="background:rgba(217,119,6,0.1);border:1px solid rgba(217,119,6,0.3);border-radius:10px;padding:0.6rem 0.85rem;color:#B45309;font-weight:700;">
+              ⏳ Đang đọc và bóc tách dữ liệu từ <strong>${files.length} file</strong> (Word / PDF / CSV / TXT)...
+            </div>
+          `;
+        }
         let totalPreviewCount = 0;
         for (const f of files) {
-          const text = await f.text();
-          const parsed = global.TrilinguoAPI.parseDocumentContentInBrowser(f.name, text);
-          totalPreviewCount += parsed.length;
+          const extractedDoc = await global.TrilinguoAPI.extractDocumentFileInBrowser(f);
+          totalPreviewCount += (extractedDoc.entries || []).length;
           pendingUploadedDocs.push({
-            filename: f.name,
-            content: text,
-            entries: parsed
+            filename: extractedDoc.filename || f.name,
+            content: extractedDoc.content || '',
+            file_base64: extractedDoc.file_base64 || null,
+            entries: extractedDoc.entries || []
           });
         }
         if (filePreview) {
           filePreview.innerHTML = `
             <div style="background:rgba(15,118,110,0.08);border:1px solid rgba(15,118,110,0.3);border-radius:10px;padding:0.6rem 0.85rem;color:#0F766E;font-weight:700;">
-              ✅ Đã đọc <strong>${files.length} file</strong> (${files.map(f => escapeHtml(f.name)).join(', ')}) — Trích xuất được <strong>${totalPreviewCount} mục từ/câu hợp lệ</strong> sẵn sàng huấn luyện!
+              ✅ Đã đọc <strong>${files.length} file</strong> (${files.map(f => escapeHtml(f.name)).join(', ')}) — Trích xuất được <strong>${totalPreviewCount} mục từ/câu hợp lệ</strong> (nếu là file PDF/Word phức tạp, máy chủ AI cũng sẽ phân tích bổ sung khi bấm Nạp)!
             </div>
           `;
         }
@@ -1586,7 +1637,7 @@
             corpusStatusMsg.classList.remove('is-hidden');
             corpusStatusMsg.style.background = 'rgba(220,38,38,0.12)';
             corpusStatusMsg.style.color = '#B91C1C';
-            corpusStatusMsg.innerHTML = '⚠️ Vui lòng chọn ít nhất 1 file tài liệu (.csv, .txt, .tsv, .json, .md) hoặc dán nội dung vào ô văn bản!';
+            corpusStatusMsg.innerHTML = '⚠️ Vui lòng chọn ít nhất 1 file tài liệu (.docx, .doc, .pdf, .csv, .txt, .tsv, .json, .md) hoặc dán nội dung vào ô văn bản!';
           }
           return;
         }
@@ -1603,6 +1654,7 @@
             const res = await global.TrilinguoAPI.adminUploadCorpusDocument({
               filename: doc.filename,
               content: doc.content,
+              file_base64: doc.file_base64,
               entries: doc.entries
             });
             totalInserted += res.inserted_count || 0;
@@ -1689,6 +1741,76 @@
           corpusFilterState.source
         );
         renderAdminPortalDOM();
+      });
+    }
+
+    const enrichAllBtn = document.getElementById('adminEnrichAllCorpusBtn');
+    if (enrichAllBtn) {
+      enrichAllBtn.addEventListener('click', async () => {
+        enrichAllBtn.disabled = true;
+        enrichAllBtn.textContent = '⏳ Đang chuẩn hóa 3 ngôn ngữ...';
+        try {
+          const res = await global.TrilinguoAPI.adminEnrichAllCorpusEntries();
+          cachedCorpusData = await global.TrilinguoAPI.getCorpusEntries(
+            corpusFilterState.search,
+            corpusFilterState.source
+          );
+          renderAdminPortalDOM();
+          if (global.TrilinguoApp && global.TrilinguoApp.showToast) {
+            global.TrilinguoApp.showToast(
+              res.message || 'Đã chuẩn hóa đầy đủ 3 ngôn ngữ cho toàn bộ Kho Tri Thức!',
+              'success'
+            );
+          }
+        } catch (err) {
+          if (global.TrilinguoApp && global.TrilinguoApp.showToast) {
+            global.TrilinguoApp.showToast(err.message, 'error');
+          }
+        } finally {
+          enrichAllBtn.disabled = false;
+          enrichAllBtn.textContent = '✨ Chuẩn hóa & Lấp đầy Đủ 3 Ngôn ngữ (100%)';
+        }
+      });
+    }
+
+    const liveTestBtn = document.getElementById('adminLiveTestBtn');
+    const liveTestInput = document.getElementById('adminLiveTestInput');
+    const liveTestResultBox = document.getElementById('adminLiveTestResultBox');
+    if (liveTestBtn && liveTestInput && liveTestResultBox) {
+      const runLiveCorpusTest = async () => {
+        const q = (liveTestInput.value || '').trim();
+        if (!q) return;
+        liveTestResultBox.classList.remove('is-hidden');
+        try {
+          const resHmn = await global.TrilinguoAPI.translateViaBackend(q, 'hmn', 'vi');
+          const cat =
+            global.TrilinguoData && global.TrilinguoData.inferPhraseCategory
+              ? global.TrilinguoData.inferPhraseCategory(
+                  resHmn.hmnText,
+                  resHmn.viText,
+                  resHmn.enText
+                )
+              : 'culture';
+          liveTestResultBox.innerHTML = `
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0.55rem;">
+              <div><strong style="color:var(--color-main-orange);">Tiếng Mông (HMN):</strong> ${escapeHtml(resHmn.hmnText)}</div>
+              <div><strong style="color:#0F766E;">Tiếng Việt (VI):</strong> ${escapeHtml(resHmn.viText)}</div>
+              <div><strong style="color:#1D4ED8;">Tiếng Anh (EN):</strong> ${escapeHtml(resHmn.enText)}</div>
+            </div>
+            <div style="margin-top:0.45rem;font-size:0.79rem;color:var(--text-secondary);">
+              🔊 <strong>Phiên âm RPA:</strong> /${escapeHtml(resHmn.phonetic || '')}/ · 🏷️ <strong>Loại từ:</strong> ${escapeHtml(resHmn.posCode || '(nth) nthe')} · 📂 <strong>Chủ đề Mẫu câu:</strong> <code>${escapeHtml(cat)}</code> · ✅ <em>Sẵn sàng cho Dịch thuật, Tra từ bôi đen, Mẫu câu, Flashcard &amp; Quiz!</em>
+            </div>
+          `;
+        } catch (err) {
+          liveTestResultBox.innerHTML = `<span style="color:#B91C1C;">⚠️ ${escapeHtml(err.message)}</span>`;
+        }
+      };
+      liveTestBtn.addEventListener('click', runLiveCorpusTest);
+      liveTestInput.addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          runLiveCorpusTest();
+        }
       });
     }
 
