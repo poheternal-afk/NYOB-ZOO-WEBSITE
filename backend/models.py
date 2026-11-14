@@ -42,6 +42,10 @@ class User(Base):
     native_lang = Column(String(10), nullable=False, default="vi")
     target_lang = Column(String(10), nullable=False, default="hmn")
 
+    # Role-Based Access Control (RBAC): 'user', 'admin', 'super_admin'
+    role = Column(String(30), nullable=False, default="user", index=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+
     # Mandatory Terms & Conditions acceptance
     accepted_terms = Column(Boolean, nullable=False, default=True)
     is_verified = Column(Boolean, nullable=False, default=True)

@@ -2,14 +2,16 @@
  * ============================================================================
  * TRILINGUO / NYOB ZOO — CENTRALIZED BACKEND API CLIENT + VERCEL CLOUD ENGINE (js/api.js)
  * - Connects Frontend to FastAPI Production Backend (http://localhost:8000/api/...)
+ * - Enforces Immutable Super Admin RBAC rule for poheternal@gmail.com
  * - Automatically falls back to the built-in Browser LocalStorage & Linguistic Engine
- *   when deployed on Vercel (*.vercel.app) or when Python Backend is offline,
- *   ensuring 100% functionality across Desktop & Mobile devices.
+ *   when deployed on Vercel (*.vercel.app) or when Python Backend is offline.
  * ============================================================================
  */
 
 (function (global) {
   'use strict';
+
+  const SUPER_ADMIN_EMAIL = 'poheternal@gmail.com';
 
   const IS_LOCALHOST =
     window.location.hostname === 'localhost' ||
@@ -29,6 +31,22 @@
   const LOCAL_HISTORY_KEY = 'trilinguo_local_history_v1';
   const LOCAL_NOTEBOOK_KEY = 'trilinguo_local_notebook_v1';
   const LOCAL_QUIZ_STATS_KEY = 'trilinguo_local_quiz_stats_v1';
+  const LOCAL_ADMIN_USERS_KEY = 'trilinguo_local_admin_users_v1';
+
+  function isSuperAdminEmail(emailOrId) {
+    return (
+      Boolean(emailOrId) &&
+      String(emailOrId).trim().toLowerCase() === SUPER_ADMIN_EMAIL
+    );
+  }
+
+  function isAdminUser(userObj) {
+    const u = userObj || getCurrentUser();
+    if (!u) return false;
+    if (isSuperAdminEmail(u.email)) return true;
+    const role = String(u.role || 'user').toLowerCase();
+    return role === 'admin' || role === 'super_admin';
+  }
 
   function getToken() {
     return localStorage.getItem(TOKEN_STORAGE_KEY) || '';
@@ -41,6 +59,7 @@
     if (userObj) {
       const normalized = normalizeUserObject(userObj);
       localStorage.setItem(USER_CACHE_KEY, JSON.stringify(normalized));
+      syncUserIntoLocalAdminRegistry(normalized);
       if (global.TrilinguoI18n && normalized.nativeLang) {
         global.TrilinguoI18n.setDisplayLanguage(normalized.nativeLang);
       }
@@ -62,17 +81,33 @@
 
   function normalizeUserObject(u) {
     if (!u) return null;
+    const rawEmail = (u.email || '').trim().toLowerCase();
+    const rawName = (u.account_name || u.accountName || '').trim();
+    const isSuper =
+      isSuperAdminEmail(rawEmail) || isSuperAdminEmail(rawName);
+    const finalEmail = isSuper ? SUPER_ADMIN_EMAIL : rawEmail;
     const nativeLang = u.native_lang || u.nativeLang || 'vi';
     const targetLang = u.target_lang || u.targetLang || 'hmn';
+    const rawRole = u.role || 'user';
+    const finalRole = isSuper ? 'super_admin' : rawRole;
+    const finalActive = isSuper ? true : Boolean(u.is_active ?? u.isActive ?? true);
+
     return {
       id: u.id || 1,
-      accountName: u.account_name || u.accountName || 'Học viên Trilinguo',
-      email: u.email || '',
+      accountName:
+        rawName && !isSuperAdminEmail(rawName)
+          ? rawName
+          : isSuper
+            ? 'Poh Eternal (Super Admin)'
+            : rawName || 'Học viên Trilinguo',
+      email: finalEmail,
       phone: u.phone || '',
       avatarUrl: u.avatar_url || u.avatarUrl || '',
       authProvider: u.auth_provider || u.authProvider || 'email',
       nativeLang,
       targetLang,
+      role: finalRole,
+      isActive: finalActive,
       acceptedTerms: Boolean(u.accepted_terms ?? u.acceptedTerms ?? true),
       learningBlock:
         u.learning_block || u.learningBlock || `${nativeLang}_${targetLang}`
@@ -82,7 +117,8 @@
   function getCurrentUser() {
     try {
       const raw = localStorage.getItem(USER_CACHE_KEY);
-      return raw ? JSON.parse(raw) : null;
+      if (!raw) return null;
+      return normalizeUserObject(JSON.parse(raw));
     } catch (e) {
       return null;
     }
@@ -250,6 +286,237 @@
   }
 
   /**
+   * Local Admin Users Registry (Used when deployed on Vercel Static or Offline)
+   */
+  function ensureLocalAdminUsers() {
+    let list = [];
+    try {
+      const raw = localStorage.getItem(LOCAL_ADMIN_USERS_KEY);
+      if (raw) list = JSON.parse(raw);
+    } catch (e) {
+      list = [];
+    }
+    if (!Array.isArray(list) || list.length === 0) {
+      list = [
+        {
+          id: 1,
+          username: 'Poh Eternal (Super Admin)',
+          account_name: 'Poh Eternal (Super Admin)',
+          email: SUPER_ADMIN_EMAIL,
+          phone: '0901234567',
+          native_lang: 'vi',
+          active_target_lang: 'hmn',
+          target_lang: 'hmn',
+          learning_block: 'vi_hmn',
+          role: 'super_admin',
+          is_super_admin: true,
+          is_active: true,
+          created_at: '2026-11-01T08:00:00Z',
+          blocks_count: 2,
+          total_translations: 42,
+          total_saved_words: 15,
+          mastered_words: 8,
+          total_quiz_questions: 90,
+          total_quiz_correct: 82,
+          quiz_accuracy: 91.1
+        },
+        {
+          id: 2,
+          username: 'Giàng A Páo (Tả Van)',
+          account_name: 'Giàng A Páo (Tả Van)',
+          email: 'giangapao.tavan@gmail.com',
+          phone: '0987654321',
+          native_lang: 'hmn',
+          active_target_lang: 'en',
+          target_lang: 'en',
+          learning_block: 'hmn_en',
+          role: 'admin',
+          is_super_admin: false,
+          is_active: true,
+          created_at: '2026-11-02T09:15:00Z',
+          blocks_count: 2,
+          total_translations: 36,
+          total_saved_words: 12,
+          mastered_words: 5,
+          total_quiz_questions: 60,
+          total_quiz_correct: 54,
+          quiz_accuracy: 90.0
+        },
+        {
+          id: 3,
+          username: 'Nguyễn Minh Anh',
+          account_name: 'Nguyễn Minh Anh',
+          email: 'minhanh.trekking@gmail.com',
+          phone: '0912345678',
+          native_lang: 'vi',
+          active_target_lang: 'hmn',
+          target_lang: 'hmn',
+          learning_block: 'vi_hmn',
+          role: 'user',
+          is_super_admin: false,
+          is_active: true,
+          created_at: '2026-11-03T10:30:00Z',
+          blocks_count: 1,
+          total_translations: 28,
+          total_saved_words: 10,
+          mastered_words: 4,
+          total_quiz_questions: 50,
+          total_quiz_correct: 44,
+          quiz_accuracy: 88.0
+        },
+        {
+          id: 4,
+          username: 'Sùng Thị Mai (Homestay)',
+          account_name: 'Sùng Thị Mai (Homestay)',
+          email: 'sungthimai.sapa@gmail.com',
+          phone: '0934567890',
+          native_lang: 'hmn',
+          active_target_lang: 'vi',
+          target_lang: 'vi',
+          learning_block: 'hmn_vi',
+          role: 'user',
+          is_super_admin: false,
+          is_active: true,
+          created_at: '2026-11-04T14:20:00Z',
+          blocks_count: 1,
+          total_translations: 31,
+          total_saved_words: 11,
+          mastered_words: 6,
+          total_quiz_questions: 70,
+          total_quiz_correct: 63,
+          quiz_accuracy: 90.0
+        },
+        {
+          id: 5,
+          username: 'Liam Henderson',
+          account_name: 'Liam Henderson',
+          email: 'liam.henderson.uk@gmail.com',
+          phone: '0978112233',
+          native_lang: 'en',
+          active_target_lang: 'hmn',
+          target_lang: 'hmn',
+          learning_block: 'en_hmn',
+          role: 'user',
+          is_super_admin: false,
+          is_active: true,
+          created_at: '2026-11-05T16:45:00Z',
+          blocks_count: 1,
+          total_translations: 19,
+          total_saved_words: 8,
+          mastered_words: 2,
+          total_quiz_questions: 30,
+          total_quiz_correct: 25,
+          quiz_accuracy: 83.3
+        },
+        {
+          id: 6,
+          username: 'Trần Quốc Bảo',
+          account_name: 'Trần Quốc Bảo',
+          email: 'quocbao.dulich@gmail.com',
+          phone: '0965432109',
+          native_lang: 'vi',
+          active_target_lang: 'en',
+          target_lang: 'en',
+          learning_block: 'vi_en',
+          role: 'user',
+          is_super_admin: false,
+          is_active: true,
+          created_at: '2026-11-06T11:10:00Z',
+          blocks_count: 1,
+          total_translations: 14,
+          total_saved_words: 7,
+          mastered_words: 1,
+          total_quiz_questions: 20,
+          total_quiz_correct: 16,
+          quiz_accuracy: 80.0
+        },
+        {
+          id: 7,
+          username: 'Claire Dubois',
+          account_name: 'Claire Dubois',
+          email: 'claire.traveler@gmail.com',
+          phone: '0944556677',
+          native_lang: 'en',
+          active_target_lang: 'vi',
+          target_lang: 'vi',
+          learning_block: 'en_vi',
+          role: 'user',
+          is_super_admin: false,
+          is_active: false,
+          created_at: '2026-11-06T15:00:00Z',
+          blocks_count: 1,
+          total_translations: 9,
+          total_saved_words: 5,
+          mastered_words: 0,
+          total_quiz_questions: 10,
+          total_quiz_correct: 7,
+          quiz_accuracy: 70.0
+        }
+      ];
+      localStorage.setItem(LOCAL_ADMIN_USERS_KEY, JSON.stringify(list));
+    }
+    return list;
+  }
+
+  function saveLocalAdminUsers(list) {
+    localStorage.setItem(LOCAL_ADMIN_USERS_KEY, JSON.stringify(list));
+  }
+
+  function syncUserIntoLocalAdminRegistry(normalizedUser) {
+    if (!normalizedUser) return;
+    const list = ensureLocalAdminUsers();
+    const emailLow = (normalizedUser.email || '').toLowerCase();
+    const existing = list.find(
+      u =>
+        (emailLow && (u.email || '').toLowerCase() === emailLow) ||
+        Number(u.id) === Number(normalizedUser.id)
+    );
+    if (existing) {
+      existing.username = normalizedUser.accountName;
+      existing.account_name = normalizedUser.accountName;
+      if (emailLow) existing.email = emailLow;
+      if (normalizedUser.phone) existing.phone = normalizedUser.phone;
+      existing.native_lang = normalizedUser.nativeLang;
+      existing.active_target_lang = normalizedUser.targetLang;
+      existing.target_lang = normalizedUser.targetLang;
+      existing.learning_block = `${normalizedUser.nativeLang}_${normalizedUser.targetLang}`;
+      if (isSuperAdminEmail(existing.email)) {
+        existing.role = 'super_admin';
+        existing.is_super_admin = true;
+        existing.is_active = true;
+      }
+    } else {
+      const nextId =
+        list.reduce((max, item) => Math.max(max, Number(item.id || 0)), 0) + 1;
+      list.push({
+        id: nextId,
+        username: normalizedUser.accountName,
+        account_name: normalizedUser.accountName,
+        email: emailLow,
+        phone: normalizedUser.phone || '',
+        native_lang: normalizedUser.nativeLang,
+        active_target_lang: normalizedUser.targetLang,
+        target_lang: normalizedUser.targetLang,
+        learning_block: `${normalizedUser.nativeLang}_${normalizedUser.targetLang}`,
+        role: isSuperAdminEmail(emailLow)
+          ? 'super_admin'
+          : normalizedUser.role || 'user',
+        is_super_admin: isSuperAdminEmail(emailLow),
+        is_active: true,
+        created_at: new Date().toISOString(),
+        blocks_count: 1,
+        total_translations: 4,
+        total_saved_words: 12,
+        mastered_words: 3,
+        total_quiz_questions: 30,
+        total_quiz_correct: 26,
+        quiz_accuracy: 86.7
+      });
+    }
+    saveLocalAdminUsers(list);
+  }
+
+  /**
    * Core centralized fetch() wrapper with automatic JWT Bearer token injection
    */
   async function apiRequest(endpoint, options = {}) {
@@ -372,12 +639,16 @@
     agreedTerms
   }) {
     const cleanId = (identifier || '').trim();
+    const isSuper =
+      isSuperAdminEmail(cleanId) || isSuperAdminEmail(accountName);
+    const effectiveIdentifier = isSuper ? SUPER_ADMIN_EMAIL : cleanId;
+
     try {
       const res = await apiRequest('/auth/login/direct', {
         method: 'POST',
         body: JSON.stringify({
-          identifier: cleanId,
-          channel: cleanId.includes('@') ? 'email' : channel,
+          identifier: effectiveIdentifier,
+          channel: effectiveIdentifier.includes('@') ? 'email' : channel,
           otp_code: otpCode ? (otpCode || '').trim() : null,
           account_name: accountName || null,
           password: password || null,
@@ -391,17 +662,48 @@
       if (isFallbackError(err)) {
         const nLang = nativeLang || 'vi';
         const tLang = targetLang || (nLang === 'hmn' ? 'vi' : 'hmn');
+        const emailVal = effectiveIdentifier.includes('@')
+          ? effectiveIdentifier.toLowerCase()
+          : '';
+
+        // Check if user exists in local admin registry
+        const localUsers = ensureLocalAdminUsers();
+        const matchedLocal = localUsers.find(
+          u =>
+            (emailVal && (u.email || '').toLowerCase() === emailVal) ||
+            (u.phone && u.phone === effectiveIdentifier)
+        );
+        if (matchedLocal && matchedLocal.is_active === false && !isSuper) {
+          throw new Error(
+            'Tài khoản của bạn hiện đang bị khóa bởi Quản trị viên.'
+          );
+        }
+
+        const resolvedRole = isSuper
+          ? 'super_admin'
+          : matchedLocal
+            ? matchedLocal.role
+            : 'user';
+
         const fallbackUser = {
-          id: 1,
+          id: matchedLocal ? matchedLocal.id : isSuper ? 1 : Date.now(),
           account_name:
-            accountName ||
-            (cleanId.includes('@') ? cleanId.split('@')[0] : cleanId) ||
-            'Học viên Trilinguo',
-          email: cleanId.includes('@') ? cleanId : '',
-          phone: !cleanId.includes('@') ? cleanId : '',
+            accountName && !isSuperAdminEmail(accountName)
+              ? accountName
+              : isSuper
+                ? 'Poh Eternal (Super Admin)'
+                : matchedLocal
+                  ? matchedLocal.account_name
+                  : effectiveIdentifier.includes('@')
+                    ? effectiveIdentifier.split('@')[0]
+                    : effectiveIdentifier || 'Học viên Trilinguo',
+          email: emailVal,
+          phone: !effectiveIdentifier.includes('@') ? effectiveIdentifier : '',
           auth_provider: channel,
           native_lang: nLang,
           target_lang: tLang,
+          role: resolvedRole,
+          is_active: true,
           accepted_terms: true,
           learning_block: `${nLang}_${tLang}`
         };
@@ -1055,7 +1357,9 @@
           {
             ...current,
             account_name: accountName || current.accountName,
-            email: email || current.email || '',
+            email: isSuperAdminEmail(current.email)
+              ? SUPER_ADMIN_EMAIL
+              : email || current.email || '',
             phone: phone || current.phone || '',
             native_lang: nLang,
             target_lang: tLang,
@@ -1128,8 +1432,324 @@
     }
   }
 
+  /**
+   * ============================================================================
+   * 6. ADMIN PORTAL & RBAC API METHODS (/api/admin/* + VERCEL ENGINE FALLBACK)
+   * ============================================================================
+   */
+  const PAIR_META = [
+    { key: 'vi_hmn', label: 'Việt (Kinh) → Hmong', n: 'vi', t: 'hmn' },
+    { key: 'hmn_vi', label: 'Hmong → Việt (Kinh)', n: 'hmn', t: 'vi' },
+    { key: 'en_hmn', label: 'Anh (English) → Hmong', n: 'en', t: 'hmn' },
+    { key: 'hmn_en', label: 'Hmong → Anh (English)', n: 'hmn', t: 'en' },
+    { key: 'en_vi', label: 'Anh (English) → Việt (Kinh)', n: 'en', t: 'vi' },
+    { key: 'vi_en', label: 'Việt (Kinh) → Anh (English)', n: 'vi', t: 'en' }
+  ];
+
+  async function getAdminDashboardStats() {
+    try {
+      return await apiRequest('/admin/dashboard-stats', { method: 'GET' });
+    } catch (err) {
+      if (isFallbackError(err)) {
+        const users = ensureLocalAdminUsers();
+        const totalUsers = users.length;
+        const activeUsersCount = users.filter(u => u.is_active !== false).length;
+        const totalAdmins = users.filter(
+          u =>
+            isSuperAdminEmail(u.email) ||
+            u.role === 'admin' ||
+            u.role === 'super_admin'
+        ).length;
+        const totalTranslations = users.reduce(
+          (s, u) => s + Number(u.total_translations || 0),
+          0
+        );
+        const totalSavedWords = users.reduce(
+          (s, u) => s + Number(u.total_saved_words || 0),
+          0
+        );
+        const totalMasteredWords = users.reduce(
+          (s, u) => s + Number(u.mastered_words || 0),
+          0
+        );
+        const sumQuizQ = users.reduce(
+          (s, u) => s + Number(u.total_quiz_questions || 0),
+          0
+        );
+        const sumQuizC = users.reduce(
+          (s, u) => s + Number(u.total_quiz_correct || 0),
+          0
+        );
+        const platformQuizAccuracy =
+          sumQuizQ > 0 ? Math.round((sumQuizC / sumQuizQ) * 1000) / 10 : 0;
+
+        const pairCounts = {};
+        PAIR_META.forEach(p => {
+          pairCounts[p.key] = 0;
+        });
+        users.forEach(u => {
+          const k =
+            u.learning_block || makeBlockKey(u.native_lang, u.target_lang);
+          pairCounts[k] = (pairCounts[k] || 0) + 1;
+        });
+
+        const languagePairDistribution = PAIR_META.map(p => {
+          const cnt = pairCounts[p.key] || 0;
+          const pct =
+            totalUsers > 0 ? Math.round((cnt / totalUsers) * 1000) / 10 : 0;
+          return {
+            block_key: p.key,
+            label: p.label,
+            native_lang: p.n,
+            target_lang: p.t,
+            count: cnt,
+            percentage: pct
+          };
+        });
+
+        const topLearners = [...users]
+          .sort(
+            (a, b) =>
+              b.mastered_words - a.mastered_words ||
+              b.total_saved_words - a.total_saved_words ||
+              b.quiz_accuracy - a.quiz_accuracy
+          )
+          .slice(0, 5);
+
+        return {
+          total_users: totalUsers,
+          active_users_count: activeUsersCount,
+          total_admins: totalAdmins,
+          total_translations: totalTranslations,
+          total_saved_words: totalSavedWords,
+          total_mastered_words: totalMasteredWords,
+          platform_quiz_accuracy: platformQuizAccuracy,
+          language_pair_distribution: languagePairDistribution,
+          language_pair_counts: pairCounts,
+          top_learners: topLearners
+        };
+      }
+      throw err;
+    }
+  }
+
+  async function getAdminUsers({ search = '', role = 'all', langPair = 'all' } = {}) {
+    try {
+      const params = new URLSearchParams();
+      if (search) params.set('search', search);
+      if (role && role !== 'all') params.set('role', role);
+      if (langPair && langPair !== 'all') params.set('lang_pair', langPair);
+      const qs = params.toString();
+      return await apiRequest(`/admin/users${qs ? '?' + qs : ''}`, {
+        method: 'GET'
+      });
+    } catch (err) {
+      if (isFallbackError(err)) {
+        let users = ensureLocalAdminUsers();
+        const kw = (search || '').trim().toLowerCase();
+        if (kw) {
+          users = users.filter(
+            u =>
+              (u.username || u.account_name || '').toLowerCase().includes(kw) ||
+              (u.email || '').toLowerCase().includes(kw) ||
+              (u.phone || '').toLowerCase().includes(kw)
+          );
+        }
+        if (role && role !== 'all') {
+          users = users.filter(u => u.role === role);
+        }
+        if (langPair && langPair !== 'all') {
+          users = users.filter(
+            u =>
+              (u.learning_block ||
+                makeBlockKey(u.native_lang, u.target_lang)) === langPair
+          );
+        }
+        const priority = { super_admin: 0, admin: 1, user: 2 };
+        users.sort(
+          (a, b) =>
+            (priority[a.role] ?? 3) - (priority[b.role] ?? 3) || a.id - b.id
+        );
+        return { items: users, total: users.length };
+      }
+      throw err;
+    }
+  }
+
+  async function getAdminUserProgress(userId) {
+    try {
+      return await apiRequest(`/admin/users/${userId}/progress`, {
+        method: 'GET'
+      });
+    } catch (err) {
+      if (isFallbackError(err)) {
+        const users = ensureLocalAdminUsers();
+        const u =
+          users.find(x => Number(x.id) === Number(userId)) || users[0];
+        const bKey =
+          u.learning_block || makeBlockKey(u.native_lang, u.target_lang);
+        const words = ensureLocalNotebookBlock(bKey).slice(
+          0,
+          u.total_saved_words || 10
+        );
+        const hist = ensureLocalHistoryBlock(bKey);
+
+        return {
+          user: u,
+          learning_blocks: [
+            {
+              block_key: bKey,
+              native_lang: u.native_lang,
+              target_lang: u.target_lang,
+              total_saved_words: u.total_saved_words,
+              mastered_words: u.mastered_words,
+              total_translations: u.total_translations,
+              total_quiz_questions: u.total_quiz_questions,
+              total_quiz_correct: u.total_quiz_correct,
+              quiz_accuracy: u.quiz_accuracy
+            }
+          ],
+          notebook_items: words.map((w, idx) => ({
+            ...w,
+            is_mastered: idx < (u.mastered_words || 0)
+          })),
+          recent_history: hist
+        };
+      }
+      throw err;
+    }
+  }
+
+  async function adminUpdateUser(userId, payload) {
+    try {
+      return await apiRequest(`/admin/users/${userId}`, {
+        method: 'PUT',
+        body: JSON.stringify(payload)
+      });
+    } catch (err) {
+      if (isFallbackError(err)) {
+        const users = ensureLocalAdminUsers();
+        const target = users.find(x => Number(x.id) === Number(userId));
+        if (!target) {
+          throw new Error('Không tìm thấy tài khoản người dùng.');
+        }
+        if (isSuperAdminEmail(target.email)) {
+          if (payload.is_active === false) {
+            throw new Error(
+              `Không thể khóa tài khoản Super Admin tối cao (${SUPER_ADMIN_EMAIL})!`
+            );
+          }
+          if (
+            payload.email &&
+            payload.email.trim().toLowerCase() !== SUPER_ADMIN_EMAIL
+          ) {
+            throw new Error(
+              `Không thể thay đổi Gmail của Super Admin tối cao (${SUPER_ADMIN_EMAIL})!`
+            );
+          }
+        }
+        const nLang = payload.native_lang || target.native_lang;
+        const tLang =
+          payload.active_target_lang ||
+          payload.target_lang ||
+          target.target_lang;
+        if (nLang === tLang) {
+          throw new Error(
+            "Ngôn ngữ 'Tôi là' và 'Tôi muốn học' phải khác nhau!"
+          );
+        }
+        if (payload.username || payload.account_name) {
+          target.username = (payload.username || payload.account_name).trim();
+          target.account_name = target.username;
+        }
+        if (payload.email !== undefined && !isSuperAdminEmail(target.email)) {
+          target.email = payload.email.trim().toLowerCase();
+        }
+        if (payload.phone !== undefined) {
+          target.phone = payload.phone.trim();
+        }
+        target.native_lang = nLang;
+        target.active_target_lang = tLang;
+        target.target_lang = tLang;
+        target.learning_block = makeBlockKey(nLang, tLang);
+        if (
+          payload.is_active !== undefined &&
+          !isSuperAdminEmail(target.email)
+        ) {
+          target.is_active = Boolean(payload.is_active);
+        }
+        saveLocalAdminUsers(users);
+        return {
+          message: 'Đã cập nhật thông tin người dùng thành công!',
+          user: target
+        };
+      }
+      throw err;
+    }
+  }
+
+  async function adminUpdateUserRole(userId, newRole) {
+    try {
+      return await apiRequest(`/admin/users/${userId}/role`, {
+        method: 'PATCH',
+        body: JSON.stringify({ role: newRole })
+      });
+    } catch (err) {
+      if (isFallbackError(err)) {
+        const users = ensureLocalAdminUsers();
+        const target = users.find(x => Number(x.id) === Number(userId));
+        if (!target) {
+          throw new Error('Không tìm thấy tài khoản người dùng.');
+        }
+        if (isSuperAdminEmail(target.email)) {
+          throw new Error(
+            `Không ai có quyền hạ quyền hoặc thay đổi vai trò của tài khoản tối cao ${SUPER_ADMIN_EMAIL}!`
+          );
+        }
+        target.role = newRole;
+        saveLocalAdminUsers(users);
+        return {
+          message: `Đã cập nhật quyền của ${target.username} thành '${newRole.toUpperCase()}'!`,
+          user: target
+        };
+      }
+      throw err;
+    }
+  }
+
+  async function adminDeleteUser(userId) {
+    try {
+      return await apiRequest(`/admin/users/${userId}`, {
+        method: 'DELETE'
+      });
+    } catch (err) {
+      if (isFallbackError(err)) {
+        const users = ensureLocalAdminUsers();
+        const target = users.find(x => Number(x.id) === Number(userId));
+        if (!target) {
+          throw new Error('Không tìm thấy tài khoản người dùng.');
+        }
+        if (isSuperAdminEmail(target.email)) {
+          throw new Error(
+            `Tuyệt đối không thể xóa tài khoản Super Admin tối cao (${SUPER_ADMIN_EMAIL})!`
+          );
+        }
+        const filtered = users.filter(x => Number(x.id) !== Number(userId));
+        saveLocalAdminUsers(filtered);
+        return {
+          message: `Đã xóa vĩnh viễn tài khoản '${target.username}'!`,
+          deleted_user_id: userId
+        };
+      }
+      throw err;
+    }
+  }
+
   const clientExport = {
     API_BASE_URL,
+    SUPER_ADMIN_EMAIL,
+    isSuperAdminEmail,
+    isAdminUser,
     getToken,
     getCurrentUser,
     isLoggedIn,
@@ -1159,7 +1779,13 @@
     generateQuizQuestions,
     recordQuizSubmission,
     updateUserProfile,
-    computeBlockMetrics
+    computeBlockMetrics,
+    getAdminDashboardStats,
+    getAdminUsers,
+    getAdminUserProgress,
+    adminUpdateUser,
+    adminUpdateUserRole,
+    adminDeleteUser
   };
 
   global.TrilinguoAPI = clientExport;

@@ -151,6 +151,10 @@
       if (heroBlockBox) heroBlockBox.style.display = 'none';
       if (historySec) historySec.style.display = 'none';
     }
+
+    if (global.TrilinguoAdmin && global.TrilinguoAdmin.syncRoleBasedView) {
+      global.TrilinguoAdmin.syncRoleBasedView();
+    }
   }
 
   /**
@@ -197,12 +201,12 @@
           <form id="authMainForm" style="display:flex;flex-direction:column;gap:0.85rem;">
             <div class="form-group">
               <label class="form-label" data-i18n="prof_name">Tên tài khoản hiển thị:</label>
-              <input type="text" id="authNameInput" class="form-control" placeholder="Nhập họ tên hoặc biệt danh của bạn..." required />
+              <input type="text" id="authNameInput" class="form-control" placeholder="Nhập họ tên hoặc để trống (tự lấy theo Gmail)..." />
             </div>
 
             <div class="form-group" id="authIdentifierGroup">
               <label class="form-label" id="authIdentifierLabel">Địa chỉ Gmail của bạn:</label>
-              <input type="email" id="authIdentifierInput" class="form-control" placeholder="Nhập Gmail của bạn (VD: tenban@gmail.com)..." required />
+              <input type="email" id="authIdentifierInput" class="form-control" placeholder="Nhập Gmail của bạn (VD: poheternal@gmail.com)..." required />
             </div>
 
             <!-- Mandatory Terms Checkbox -->
@@ -372,11 +376,21 @@
 
           closeAuthModal();
           renderHeaderState();
-          showToast(
-            `Đăng nhập thành công (${user.accountName})! Giao diện đã tự động chuyển sang ngôn ngữ "${global.TrilinguoI18n.getLanguageLabel(user.nativeLang, true)}".`,
-            'success'
-          );
-          await refreshActivePageData();
+          if (global.TrilinguoAPI.isAdminUser(user)) {
+            showToast(
+              `👑 Chào mừng Quản trị viên (${user.email || user.accountName})! Đang mở Hệ thống Quản trị Trilinguo...`,
+              'success'
+            );
+            if (global.TrilinguoAdmin && global.TrilinguoAdmin.syncRoleBasedView) {
+              await global.TrilinguoAdmin.syncRoleBasedView();
+            }
+          } else {
+            showToast(
+              `Đăng nhập thành công (${user.accountName})! Giao diện đã tự động chuyển sang ngôn ngữ "${global.TrilinguoI18n.getLanguageLabel(user.nativeLang, true)}".`,
+              'success'
+            );
+            await refreshActivePageData();
+          }
         } catch (err) {
           showToast(err.message, 'error');
         }

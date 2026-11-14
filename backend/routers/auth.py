@@ -37,6 +37,8 @@ from dependencies import (
     get_current_user,
     make_block_key,
     ensure_learning_block,
+    enforce_super_admin_rule,
+    is_super_admin_email,
 )
 from services.oauth_service import (
     build_google_authorize_url,
@@ -53,6 +55,8 @@ router = APIRouter(prefix="/api/auth", tags=["Authentication & OAuth2"])
 
 
 def serialize_user(user: User) -> UserResponse:
+    role_val = "super_admin" if is_super_admin_email(user.email) else (getattr(user, "role", None) or "user")
+    is_active_val = True if is_super_admin_email(user.email) else bool(getattr(user, "is_active", True))
     return UserResponse(
         id=user.id,
         account_name=user.account_name,
@@ -62,8 +66,32 @@ def serialize_user(user: User) -> UserResponse:
         auth_provider=user.auth_provider,
         native_lang=user.native_lang,
         target_lang=user.target_lang,
+        role=role_val,
+        is_active=is_active_val,
         accepted_terms=user.accepted_terms,
         learning_block=make_block_key(user.native_lang, user.target_lang),
+    )
+
+
+def finalize_authenticated_user(db: Session, user: User, provider: str) -> str:
+    """
+    Enforces the immutable Super Admin rule for poheternal@gmail.com,
+    verifies account active status, seeds initial block data, and mints JWT with role & email.
+    """
+    user = enforce_super_admin_rule(db, user)
+    if not getattr(user, "is_active", True) and not is_super_admin_email(user.email):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tài khoản của bạn hiện đang bị khóa bởi Quản trị viên.",
+        )
+    seed_initial_block_data_if_empty(db, user)
+    return create_access_token(
+        {
+            "sub": str(user.id),
+            "email": user.email or "",
+            "role": user.role,
+            "provider": provider,
+        }
     )
 
 
@@ -187,8 +215,7 @@ async def google_oauth_callback(
         db.commit()
         db.refresh(user)
 
-    seed_initial_block_data_if_empty(db, user)
-    token = create_access_token({"sub": str(user.id), "provider": "google"})
+    token = finalize_authenticated_user(db, user, provider="google")
     redirect_to = f"{settings.FRONTEND_BASE_URL}/index.html?auth_token={token}"
     return RedirectResponse(url=redirect_to)
 
@@ -231,9 +258,7 @@ async def google_oauth_token_verify(
 
     db.commit()
     db.refresh(user)
-    seed_initial_block_data_if_empty(db, user)
-
-    token = create_access_token({"sub": str(user.id), "provider": "google"})
+    token = finalize_authenticated_user(db, user, provider="google")
     return TokenResponse(access_token=token, user=serialize_user(user))
 
 
@@ -295,9 +320,7 @@ async def facebook_oauth_callback(
 
     db.commit()
     db.refresh(user)
-    seed_initial_block_data_if_empty(db, user)
-
-    token = create_access_token({"sub": str(user.id), "provider": "facebook"})
+    token = finalize_authenticated_user(db, user, provider="facebook")
     redirect_to = f"{settings.FRONTEND_BASE_URL}/index.html?auth_token={token}"
     return RedirectResponse(url=redirect_to)
 
@@ -340,9 +363,7 @@ async def facebook_oauth_token_verify(
 
     db.commit()
     db.refresh(user)
-    seed_initial_block_data_if_empty(db, user)
-
-    token = create_access_token({"sub": str(user.id), "provider": "facebook"})
+    token = finalize_authenticated_user(db, user, provider="facebook")
     return TokenResponse(access_token=token, user=serialize_user(user))
 
 
@@ -364,6 +385,7 @@ async def send_otp_endpoint(
     return result
 
 
+@router.post("/login", response_model=TokenResponse)
 @router.post("/login/direct", response_model=TokenResponse)
 @router.post("/otp/verify", response_model=TokenResponse)
 def verify_otp_and_authenticate(
@@ -420,9 +442,7 @@ def verify_otp_and_authenticate(
 
     db.commit()
     db.refresh(user)
-    seed_initial_block_data_if_empty(db, user)
-
-    token = create_access_token({"sub": str(user.id), "provider": user.auth_provider})
+    token = finalize_authenticated_user(db, user, provider=user.auth_provider)
     return TokenResponse(access_token=token, user=serialize_user(user))
 
 
@@ -453,8 +473,7 @@ def login_with_password(
         db.commit()
         db.refresh(user)
 
-    seed_initial_block_data_if_empty(db, user)
-    token = create_access_token({"sub": str(user.id), "provider": user.auth_provider})
+    token = finalize_authenticated_user(db, user, provider=user.auth_provider)
     return TokenResponse(access_token=token, user=serialize_user(user))
 
 

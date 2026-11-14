@@ -20,6 +20,41 @@ from models import User, LearningBlock
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 bearer_scheme = HTTPBearer(auto_error=False)
 
+SUPER_ADMIN_EMAIL = "poheternal@gmail.com"
+
+
+def is_super_admin_email(email: Optional[str]) -> bool:
+    return bool(email and email.strip().lower() == SUPER_ADMIN_EMAIL)
+
+
+def enforce_super_admin_rule(db: Session, user: User) -> User:
+    """
+    Immutable Hard-Rule: If user.email == 'poheternal@gmail.com',
+    automatically assign role = 'super_admin' and is_active = True in Database.
+    """
+    if not user:
+        return user
+    changed = False
+    if is_super_admin_email(user.email):
+        if getattr(user, "role", None) != "super_admin":
+            user.role = "super_admin"
+            changed = True
+        if not getattr(user, "is_active", True):
+            user.is_active = True
+            changed = True
+    else:
+        if not getattr(user, "role", None):
+            user.role = "user"
+            changed = True
+        if getattr(user, "is_active", None) is None:
+            user.is_active = True
+            changed = True
+
+    if changed:
+        db.commit()
+        db.refresh(user)
+    return user
+
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     if not hashed_password:
@@ -111,7 +146,35 @@ def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Không tìm thấy tài khoản người dùng.",
         )
+
+    user = enforce_super_admin_rule(db, user)
+    if not getattr(user, "is_active", True) and not is_super_admin_email(user.email):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tài khoản của bạn hiện đang bị khóa bởi Quản trị viên.",
+        )
     return user
+
+
+def get_current_admin(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> User:
+    """
+    RBAC Guard for all Admin Portal endpoints (/api/admin/*).
+    Allows access if current_user.email == 'poheternal@gmail.com' or role in ['admin', 'super_admin'].
+    """
+    current_user = enforce_super_admin_rule(db, current_user)
+    if is_super_admin_email(current_user.email) or getattr(current_user, "role", "user") in [
+        "admin",
+        "super_admin",
+    ]:
+        return current_user
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Bạn không có quyền truy cập khu vực Quản trị viên",
+    )
 
 
 def get_optional_user(

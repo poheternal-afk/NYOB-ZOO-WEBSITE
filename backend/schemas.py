@@ -75,6 +75,8 @@ class UserResponse(BaseModel):
     auth_provider: str
     native_lang: str
     target_lang: str
+    role: str = "user"
+    is_active: bool = True
     accepted_terms: bool
     learning_block: str
 
@@ -207,3 +209,21 @@ class ProgressMetricsResponse(BaseModel):
     total_quiz_questions: int
     total_quiz_correct: int
     quiz_accuracy: float
+
+
+# --- ADMIN PORTAL & RBAC SCHEMAS ---
+
+class AdminUserUpdateRequest(BaseModel):
+    username: Optional[str] = Field(default=None, max_length=120)
+    account_name: Optional[str] = Field(default=None, max_length=120)
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    native_lang: Optional[str] = Field(default=None, pattern="^(en|vi|hmn)$")
+    active_target_lang: Optional[str] = Field(default=None, pattern="^(en|vi|hmn)$")
+    target_lang: Optional[str] = Field(default=None, pattern="^(en|vi|hmn)$")
+    is_active: Optional[bool] = None
+
+
+class AdminRoleUpdateRequest(BaseModel):
+    role: str = Field(..., pattern="^(user|admin|super_admin)$")
+
