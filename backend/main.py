@@ -5,53 +5,21 @@ Run with: uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ============================================================================
 """
 
+import os
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from sqlalchemy import text
 from config import settings
-from database import engine, Base
+from database import ensure_db_ready
 from logger_lib import RequestLoggingMiddleware, log_api_event
 from routers import auth, translate, phrases, notebook, profile, system_logs, admin
 
+# Initialize DB immediately when running locally; on Vercel Serverless, get_db() initializes lazily
+if not os.getenv("VERCEL"):
+    ensure_db_ready()
 
-def ensure_rbac_columns_and_super_admin() -> None:
-    """
-    Safely migrates existing database tables to include `role` and `is_active` on `users`
-    and ensures poheternal@gmail.com is registered as 'super_admin'.
-    """
-    try:
-        Base.metadata.create_all(bind=engine)
-    except Exception as exc:
-        print(f"[Trilinguo Startup Warning] create_all notice: {exc}")
-
-    for alter_sql in [
-        "ALTER TABLE users ADD COLUMN role VARCHAR(30) NOT NULL DEFAULT 'user'",
-        "ALTER TABLE users ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT TRUE",
-        "ALTER TABLE users ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1",
-    ]:
-        try:
-            with engine.begin() as conn:
-                conn.execute(text(alter_sql))
-        except Exception:
-            pass
-
-    for update_sql in [
-        "UPDATE users SET role = 'super_admin', is_active = TRUE WHERE LOWER(email) = 'poheternal@gmail.com'",
-        "UPDATE users SET role = 'super_admin', is_active = 1 WHERE LOWER(email) = 'poheternal@gmail.com'",
-    ]:
-        try:
-            with engine.begin() as conn:
-                conn.execute(text(update_sql))
-            break
-        except Exception:
-            pass
-
-
-ensure_rbac_columns_and_super_admin()
 log_api_event("info", "Trilinguo NYOB ZOO Backend starting up (RBAC & Admin Portal enabled)...", component_id="CMP-SYS-BOOT")
 
 app = FastAPI(
@@ -87,6 +55,7 @@ app.include_router(system_logs.router)
 
 @app.get("/api/health", tags=["System"])
 def health_check():
+    ensure_db_ready()
     return {
         "status": "ok",
         "service": settings.APP_NAME,
@@ -94,28 +63,7 @@ def health_check():
     }
 
 
-# 4. Serve Frontend HTML & Static Files directly (both Locally & on Vercel Serverless)
+# 4. Serve Frontend Static Files directly when running locally (http://localhost:8000/)
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
-
-
-@app.get("/", include_in_schema=False)
-@app.get("/index.html", include_in_schema=False)
-@app.get("/api/index.py", include_in_schema=False)
-def serve_index_page():
-    return FileResponse(FRONTEND_DIR / "index.html")
-
-
-@app.get("/{page_name}.html", include_in_schema=False)
-def serve_html_pages(page_name: str):
-    target_file = FRONTEND_DIR / f"{page_name}.html"
-    if target_file.is_file():
-        return FileResponse(target_file)
-    return FileResponse(FRONTEND_DIR / "index.html")
-
-
-if FRONTEND_DIR.exists():
-    if (FRONTEND_DIR / "assets").exists():
-        app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIR / "assets")), name="assets")
-    if (FRONTEND_DIR / "js").exists():
-        app.mount("/js", StaticFiles(directory=str(FRONTEND_DIR / "js")), name="js")
+if not os.getenv("VERCEL") and FRONTEND_DIR.exists():
     app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")
