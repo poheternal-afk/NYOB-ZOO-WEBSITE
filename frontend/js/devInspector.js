@@ -772,7 +772,26 @@
     });
   }
 
+  const SUPER_ADMIN_EMAIL = "poheternal@gmail.com";
+
+  function isCurrentUserSuperAdmin() {
+    if (!window.TrilinguoAPI || !window.TrilinguoAPI.isLoggedIn()) {
+      return false;
+    }
+    const user = window.TrilinguoAPI.getCurrentUser();
+    if (!user) return false;
+    const email = String(user.email || "").trim().toLowerCase();
+    const role = String(user.role || "").trim().toLowerCase();
+    return email === SUPER_ADMIN_EMAIL || role === "super_admin";
+  }
+
   function toggleDebugMode(forceState) {
+    if (!isCurrentUserSuperAdmin()) {
+      debugModeActive = false;
+      document.body.classList.remove("trilinguo-debug-mode");
+      if (overlayPillsContainer) overlayPillsContainer.innerHTML = "";
+      return;
+    }
     debugModeActive = typeof forceState === "boolean" ? forceState : !debugModeActive;
     document.body.classList.toggle("trilinguo-debug-mode", debugModeActive);
     const fab = document.getElementById("trilinguoInspectorFab");
@@ -917,33 +936,66 @@
     modal.classList.add("open");
   }
 
-  function initInspectorUI() {
-    injectInspectorStyles();
-    tagAllRegisteredComponents();
+  function syncInspectorVisibilityByRole() {
+    const isSuper = isCurrentUserSuperAdmin();
+    let fab = document.getElementById("trilinguoInspectorFab");
 
-    if (!document.getElementById("trilinguoInspectorFab")) {
-      const fab = document.createElement("button");
+    if (!isSuper) {
+      // Turn off debug overlay and hide/remove the debug button for all non-Super-Admin accounts
+      if (debugModeActive) {
+        debugModeActive = false;
+        document.body.classList.remove("trilinguo-debug-mode");
+      }
+      if (overlayPillsContainer) {
+        overlayPillsContainer.innerHTML = "";
+      }
+      const modal = document.getElementById("trilinguoInspectorModal");
+      if (modal) {
+        modal.classList.remove("open");
+      }
+      if (fab) {
+        fab.remove();
+      }
+      return;
+    }
+
+    // Only create & display the floating Debug button for Super Admin
+    if (!fab) {
+      fab = document.createElement("button");
       fab.type = "button";
       fab.id = "trilinguoInspectorFab";
       fab.className = "dev-inspector-fab";
-      fab.innerHTML = "🛠️ Mã Chức Năng & Debug (Alt+I)";
-      fab.title = "Bật/tắt hiển thị Mã số chức năng (F-01..F-45) & Component ID trên giao diện để debug nhanh";
+      fab.innerHTML = debugModeActive
+        ? "🛠️ Đang bật Mã Debug (Bấm vào nhãn F-xx / Alt+I để tắt)"
+        : "🛠️ Mã Chức Năng & Debug (Alt+I)";
+      fab.title = "Chỉ hiển thị cho Super Admin: Bật/tắt Mã số chức năng (F-01..F-50) & Component ID trên giao diện để debug nhanh";
       fab.addEventListener("click", () => toggleDebugMode());
       document.body.appendChild(fab);
     }
+  }
+
+  function initInspectorUI() {
+    injectInspectorStyles();
+    tagAllRegisteredComponents();
+    syncInspectorVisibilityByRole();
+
+    window.addEventListener("trilinguo:authchange", () => {
+      syncInspectorVisibilityByRole();
+    });
 
     window.addEventListener("keydown", (e) => {
       if (e.altKey && (e.key === "i" || e.key === "I")) {
+        if (!isCurrentUserSuperAdmin()) return;
         e.preventDefault();
         toggleDebugMode();
       }
     });
 
     window.addEventListener("resize", () => {
-      if (debugModeActive) renderOverlayPills();
+      if (debugModeActive && isCurrentUserSuperAdmin()) renderOverlayPills();
     });
     window.addEventListener("scroll", () => {
-      if (debugModeActive) renderOverlayPills();
+      if (debugModeActive && isCurrentUserSuperAdmin()) renderOverlayPills();
     });
   }
 
