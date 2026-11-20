@@ -519,8 +519,9 @@
 
   /**
    * Core centralized fetch() wrapper with automatic JWT Bearer token injection
+   * and silent session recovery if token was issued by another instance.
    */
-  async function apiRequest(endpoint, options = {}) {
+  async function apiRequest(endpoint, options = {}, _isRetry = false) {
     if (!API_BASE_URL) {
       throw new Error('VERCEL_STATIC_MODE');
     }
@@ -535,7 +536,7 @@
     };
 
     const token = getToken();
-    if (token) {
+    if (token && token !== 'trilinguo_vercel_session_token') {
       headers['Authorization'] = `Bearer ${token}`;
     }
 
@@ -562,9 +563,54 @@
     }
 
     if (!response.ok) {
-      if (response.status === 401 && token && !endpoint.includes('/auth/')) {
-        clearSession();
+      // Automatic silent JWT re-sync if a cached user exists and backend returned 401
+      if (
+        response.status === 401 &&
+        !_isRetry &&
+        !endpoint.includes('/auth/login')
+      ) {
+        const cachedUser = getCurrentUser();
+        if (cachedUser) {
+          try {
+            const reAuthUrl = `${API_BASE_URL}/auth/login/direct`;
+            const idVal =
+              cachedUser.email ||
+              cachedUser.phone ||
+              cachedUser.accountName ||
+              'hocvien@trilinguo.vn';
+            const reRes = await fetch(reAuthUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                identifier: idVal,
+                channel: idVal.includes('@') ? 'email' : 'direct',
+                account_name: cachedUser.accountName || idVal,
+                native_lang: cachedUser.nativeLang || 'vi',
+                target_lang: cachedUser.targetLang || 'hmn',
+                accepted_terms: true
+              })
+            });
+            if (reRes.ok) {
+              const reData = await reRes.json();
+              if (reData && reData.access_token) {
+                localStorage.setItem(TOKEN_STORAGE_KEY, reData.access_token);
+                if (reData.user) {
+                  const normalized = normalizeUserObject(reData.user);
+                  localStorage.setItem(
+                    USER_CACHE_KEY,
+                    JSON.stringify(normalized)
+                  );
+                }
+                return await apiRequest(endpoint, options, true);
+              }
+            }
+          } catch (_) {
+            // Fall through to offline fallback
+          }
+          throw new Error('VERCEL_STATIC_MODE');
+        }
       }
+
       const errMsg =
         (data && (data.detail || data.message)) ||
         `Lỗi API (${response.status}): Yêu cầu không thành công.`;
@@ -685,14 +731,26 @@
   /**
    * 2. TRANSLATOR & TRANSLATION HISTORY API METHODS
    */
-  async function translateViaBackend({
-    text,
-    sourceLang,
-    targetLang,
-    saveHistory = true
-  }) {
+  async function translateViaBackend(arg1, arg2, arg3, arg4 = true) {
+    let text = '';
+    let sourceLang = 'hmn';
+    let targetLang = 'vi';
+    let saveHistory = true;
+
+    if (typeof arg1 === 'string') {
+      text = arg1;
+      sourceLang = arg2 || 'hmn';
+      targetLang = arg3 || 'vi';
+      saveHistory = Boolean(arg4);
+    } else if (arg1 && typeof arg1 === 'object') {
+      text = arg1.text || '';
+      sourceLang = arg1.sourceLang || arg1.source_lang || 'hmn';
+      targetLang = arg1.targetLang || arg1.target_lang || 'vi';
+      saveHistory = arg1.saveHistory !== undefined ? Boolean(arg1.saveHistory) : true;
+    }
+
     try {
-      return await apiRequest('/translate', {
+      const res = await apiRequest('/translate', {
         method: 'POST',
         body: JSON.stringify({
           text,
@@ -701,6 +759,16 @@
           save_history: Boolean(saveHistory)
         })
       });
+      return {
+        ...res,
+        sourceText: res.source_text,
+        translatedText: res.translated_text,
+        hmnText: res.hmn_text,
+        viText: res.vi_text,
+        enText: res.en_text,
+        posCode: res.pos_code,
+        grammarNote: res.grammar_note
+      };
     } catch (err) {
       if (isFallbackError(err) && global.TrilinguoData) {
         const localRes = global.TrilinguoData.translateText(
@@ -744,7 +812,14 @@
           en_text: localRes.enText,
           phonetic: localRes.phonetic,
           pos_code: posCode,
-          grammar_note: localRes.grammarNote
+          grammar_note: localRes.grammarNote,
+          sourceText: localRes.sourceText,
+          translatedText: localRes.translatedText,
+          hmnText: localRes.hmnText,
+          viText: localRes.viText,
+          enText: localRes.enText,
+          posCode,
+          grammarNote: localRes.grammarNote
         };
       }
       throw err;
@@ -2581,6 +2656,39 @@
     }
   }
 
+  async function getDatabaseStatus() {
+    try {
+      return await apiRequest('/database/status', { method: 'GET' });
+    } catch (err) {
+      return {
+        status: 'offline_fallback',
+        is_supabase: false,
+        engine_type: 'Browser LocalStorage + Serverless Fallback',
+        initialized: true
+      };
+    }
+  }
+
+  async function setupDatabase() {
+    try {
+      const res = await apiRequest('/database/setup', { method: 'POST' });
+      await getCorpusEntries();
+      return res;
+    } catch (err) {
+      if (isFallbackError(err)) {
+        ensureLocalAdminUsers();
+        ensureLocalCorpusList();
+        return {
+          status: 'initialized',
+          engine_type: 'Local / Serverless Fallback',
+          message:
+            'Đã đồng bộ hóa toàn bộ cấu trúc dữ liệu và tài khoản mẫu trên trình duyệt!'
+        };
+      }
+      throw err;
+    }
+  }
+
   // Hydrate local corpus into TrilinguoData on boot
   ensureLocalCorpusList();
 
@@ -2607,6 +2715,8 @@
     getActiveBlockKey,
     getActiveBlock,
     apiRequest,
+    getDatabaseStatus,
+    setupDatabase,
     verifyOtpAndLogin,
     fetchCurrentUser,
     signOut,

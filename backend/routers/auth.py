@@ -2,13 +2,16 @@
 ============================================================================
 TRILINGUO / NYOB ZOO — AUTHENTICATION & LEARNING BLOCK ROUTER (routers/auth.py)
 Implements:
-- Direct Login with Name / Gmail & Language Learning Block ("Tôi là" / "Tôi muốn học")
+- Direct Login with Name / Gmail / Phone & Language Learning Block ("Tôi là" / "Tôi muốn học")
+- Case-insensitive account resolution & automatic registration if new
 - Mandatory Terms validation
 - Immutable Super Admin privilege assignment for poheternal@gmail.com
 ============================================================================
 """
 
+import re
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -21,6 +24,7 @@ from dependencies import (
     ensure_learning_block,
     enforce_super_admin_rule,
     is_super_admin_email,
+    SUPER_ADMIN_EMAIL,
 )
 from services.translator import DICTIONARY, COMMON_PHRASES, POS_LABELS
 
@@ -102,7 +106,7 @@ def seed_initial_block_data_if_empty(db: Session, user: User) -> None:
 def finalize_authenticated_user(db: Session, user: User, provider: str = "email") -> str:
     """
     Enforces the immutable Super Admin rule for poheternal@gmail.com,
-    verifies account active status, seeds initial block data, and mints JWT with role & email.
+    verifies account active status, seeds initial block data, and mints JWT with full recovery claims.
     """
     user = enforce_super_admin_rule(db, user)
     if not getattr(user, "is_active", True) and not is_super_admin_email(user.email):
@@ -114,8 +118,12 @@ def finalize_authenticated_user(db: Session, user: User, provider: str = "email"
     return create_access_token(
         {
             "sub": str(user.id),
-            "email": user.email or "",
+            "email": (user.email or "").lower(),
+            "phone": user.phone or "",
+            "account_name": user.account_name or "Học viên Trilinguo",
             "role": user.role,
+            "native_lang": user.native_lang or "vi",
+            "target_lang": user.target_lang or "hmn",
             "provider": provider,
         }
     )
@@ -142,42 +150,91 @@ def direct_login(
 ):
     validate_profile_and_terms(payload.accepted_terms, payload.native_lang, payload.target_lang)
 
-    clean_id = payload.identifier.strip().lower()
-    is_email = "@" in clean_id
+    raw_id = (payload.identifier or "").strip()
+    raw_name = (payload.account_name or "").strip()
 
-    if is_email:
-        user = db.query(User).filter(User.email == clean_id).first()
+    # Check if either field contains Super Admin email
+    if is_super_admin_email(raw_id) or is_super_admin_email(raw_name):
+        clean_id = SUPER_ADMIN_EMAIL
     else:
+        clean_id = (raw_id or raw_name or "hocvien@trilinguo.vn").strip().lower()
+
+    is_email = "@" in clean_id
+    is_phone = bool(re.match(r"^[0-9+\-\s]{7,20}$", clean_id))
+
+    user = None
+
+    # 1. Lookup by Email (case-insensitive)
+    if is_email:
+        user = db.query(User).filter(func.lower(User.email) == clean_id).first()
+    elif "@" in raw_name:
+        user = db.query(User).filter(func.lower(User.email) == raw_name.lower()).first()
+
+    # 2. Lookup by Phone
+    if not user and is_phone:
         user = db.query(User).filter(User.phone == clean_id).first()
 
+    # 3. Lookup by Account Name / Username (case-insensitive)
+    if not user:
+        user = db.query(User).filter(func.lower(User.account_name) == clean_id).first()
+    if not user and raw_name:
+        user = db.query(User).filter(func.lower(User.account_name) == raw_name.lower()).first()
+
+    # 4. Also check synthesized email for username-only login
+    slug_id = re.sub(r"[^a-z0-9._-]+", "", clean_id.replace(" ", "_")) or "user"
+    synthetic_email = clean_id if is_email else (raw_name.lower() if "@" in raw_name else f"{slug_id}@trilinguo.vn")
+    if not user:
+        user = db.query(User).filter(func.lower(User.email) == synthetic_email).first()
+
     default_name = (
-        payload.account_name.strip()
-        if payload.account_name and payload.account_name.strip()
-        else (clean_id.split("@")[0] if is_email else f"Học viên {clean_id[-4:]}")
+        raw_name
+        if (raw_name and not is_super_admin_email(raw_name))
+        else (
+            "Poh Eternal (Super Admin)"
+            if clean_id == SUPER_ADMIN_EMAIL
+            else (raw_id.split("@")[0] if is_email else (raw_id or "Học viên Trilinguo"))
+        )
     )
 
     if not user:
+        is_super = is_super_admin_email(synthetic_email)
         user = User(
             account_name=default_name,
-            email=clean_id if is_email else None,
-            phone=None if is_email else clean_id,
-            auth_provider="email" if is_email else "phone",
+            email=synthetic_email,
+            phone=clean_id if is_phone else None,
+            auth_provider="email" if is_email else ("phone" if is_phone else "direct"),
             native_lang=payload.native_lang,
             target_lang=payload.target_lang,
+            role="super_admin" if is_super else "user",
+            is_active=True,
             accepted_terms=True,
             is_verified=True,
         )
         db.add(user)
     else:
-        if payload.account_name and payload.account_name.strip():
-            user.account_name = payload.account_name.strip()
+        if raw_name and not is_super_admin_email(raw_name) and "@" not in raw_name:
+            user.account_name = raw_name
         user.native_lang = payload.native_lang
         user.target_lang = payload.target_lang
         user.accepted_terms = True
         user.is_verified = True
 
-    db.commit()
-    db.refresh(user)
+    try:
+        db.commit()
+        db.refresh(user)
+    except Exception:
+        db.rollback()
+        user = (
+            db.query(User)
+            .filter(func.lower(User.email) == synthetic_email)
+            .first()
+        )
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Không thể lưu phiên đăng nhập vào cơ sở dữ liệu.",
+            )
+
     token = finalize_authenticated_user(db, user, provider=user.auth_provider)
     return TokenResponse(access_token=token, user=serialize_user(user))
 

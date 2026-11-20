@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from config import settings
-from database import ensure_db_ready
+from database import ensure_db_ready, get_active_database_info
 from logger_lib import RequestLoggingMiddleware, log_api_event
 from routers import auth, translate, phrases, notebook, profile, system_logs, admin, corpus
 
@@ -56,11 +56,35 @@ app.include_router(system_logs.router)
 
 @app.get("/api/health", tags=["System"])
 def health_check():
-    ensure_db_ready()
+    db_info = ensure_db_ready()
     return {
         "status": "ok",
         "service": settings.APP_NAME,
         "environment": settings.APP_ENV,
+        "database": db_info,
+    }
+
+
+@app.get("/api/database/status", tags=["System"])
+def database_status():
+    ensure_db_ready()
+    return {
+        "status": "ok",
+        **get_active_database_info(),
+    }
+
+
+@app.post("/api/database/setup", tags=["System"])
+def trigger_database_setup():
+    """
+    Creates/migrates all 6 tables on Supabase PostgreSQL (or SQLite fallback),
+    seeds Super Admin + default users + starter corpus, and syncs live translation corpus.
+    """
+    summary = ensure_db_ready(force=True)
+    return {
+        "status": "initialized",
+        "message": f"Đã thiết lập và đồng bộ toàn bộ 6 bảng dữ liệu trên {summary.get('engine_type', 'Database')} thành công!",
+        **summary,
     }
 
 

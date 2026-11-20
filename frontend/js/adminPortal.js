@@ -382,6 +382,9 @@
           <button type="button" class="category-pill ${currentAdminTab === 'profile' ? 'active' : ''}" data-switch-admin-tab="profile">
             ${at('nav_profile')}
           </button>
+          <button type="button" class="category-pill" id="adminSetupDatabaseBtn" style="margin-left:auto;border-color:#0F766E;color:#0F766E;" title="Tự động khởi tạo / đồng bộ toàn bộ 6 bảng dữ liệu trên Supabase PostgreSQL 24/7">
+            🗄️ Thiết lập &amp; Đồng bộ Database 24/7
+          </button>
         </div>
       </div>
 
@@ -1366,6 +1369,31 @@
         switchAdminTab(btn.getAttribute('data-switch-admin-tab'));
       });
     });
+
+    const setupDbBtn = document.getElementById('adminSetupDatabaseBtn');
+    if (setupDbBtn) {
+      setupDbBtn.addEventListener('click', async () => {
+        setupDbBtn.disabled = true;
+        setupDbBtn.textContent = '⏳ Đang khởi tạo & đồng bộ Database...';
+        try {
+          const res = await global.TrilinguoAPI.setupDatabase();
+          await loadAndRenderAdminPortal();
+          if (global.TrilinguoApp && global.TrilinguoApp.showToast) {
+            global.TrilinguoApp.showToast(
+              res.message || 'Đã khởi tạo và đồng bộ toàn bộ 6 bảng dữ liệu thành công!',
+              'success'
+            );
+          }
+        } catch (err) {
+          if (global.TrilinguoApp && global.TrilinguoApp.showToast) {
+            global.TrilinguoApp.showToast(err.message, 'error');
+          }
+        } finally {
+          setupDbBtn.disabled = false;
+          setupDbBtn.textContent = '🗄️ Thiết lập & Đồng bộ Database 24/7';
+        }
+      });
+    }
 
     // Search & filter inputs in Users tab
     const searchInput = document.getElementById('adminUserSearchInput');
